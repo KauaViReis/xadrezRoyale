@@ -26,6 +26,11 @@ html, body {
   touch-action: none;
 }
 
+button:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .panel-glass {
   background: var(--glass);
   backdrop-filter: blur(14px);
@@ -36,7 +41,11 @@ html, body {
 
 /* HUD TOPO */
 .hud-top {
-  position: fixed; top: 14px; left: 14px; right: 14px; z-index: 20;
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 45;
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   pointer-events: none;
 }
@@ -144,14 +153,36 @@ html, body {
 .hint-banner {
   position: fixed; bottom: 72px; left: 50%; transform: translateX(-50%); z-index: 22;
   padding: 8px 14px; border-radius: 999px; font-size: 12px; font-family: var(--font-mono);
-  color: var(--text); white-space: nowrap; max-width: calc(100vw - 28px); overflow: hidden; text-overflow: ellipsis;
+  color: var(--text); display: flex; align-items: center; gap: 10px;
+  white-space: nowrap; max-width: calc(100vw - 28px);
 }
+.hint-banner.hide { display: none !important; }
+.hint-banner span { overflow: hidden; text-overflow: ellipsis; }
 .hint-banner strong { color: var(--accent); }
+.hint-dismiss {
+  background: rgba(255,255,255,0.1); border: none; color: var(--text);
+  width: 22px; height: 22px; border-radius: 50%; cursor: pointer; font-size: 11px; flex-shrink: 0;
+}
 #btnHistoryToggle { display: none; }
+
+.arrow-chip {
+  position: fixed; top: 118px; right: 14px; z-index: 44;
+  padding: 6px 10px; border-radius: 999px;
+  display: flex; align-items: center; gap: 8px;
+}
+.arrow-chip.hide { display: none !important; }
+.arrow-color-btn {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.3);
+  background: var(--c); cursor: pointer; transition: transform 0.15s;
+}
+.arrow-color-btn.active { border-color: #fff; transform: scale(1.18); box-shadow: 0 0 0 2px var(--accent); }
+
+.analysis-panel { display: flex; flex-direction: column; gap: 6px; }
+.eval-graph { width: 100%; height: 48px; background: rgba(0,0,0,0.28); border-radius: 8px; cursor: pointer; }
 
 /* AÇÕES INFERIORES */
 .hud-actions {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 20;
+  position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); z-index: 20;
   display: flex; gap: 8px; flex-wrap: nowrap; max-width: calc(100vw - 24px); overflow-x: auto;
 }
 .act-btn {
@@ -163,11 +194,12 @@ html, body {
 
 /* OVERLAYS & MODAIS */
 .overlay {
-  position: fixed; inset: 0; z-index: 50;
+  position: fixed; inset: 0; z-index: 55;
   background: rgba(8, 7, 6, 0.68);
   backdrop-filter: blur(6px);
   display: grid; place-items: center; padding: 16px;
 }
+#menuOverlay { z-index: 40; }
 .overlay.hide { display: none; }
 
 .modal {

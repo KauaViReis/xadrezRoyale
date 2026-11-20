@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>XADREZ ROYALE — Xadrez 3D Online</title>
   <meta name="description" content="Xadrez Royale: jogo de xadrez 3D com regras oficiais FIDE, IA em Web Worker, rating Elo, modos Bullet/Blitz/Rápida e visual editorial.">
   <meta name="theme-color" content="#0E0D0B">
@@ -16,10 +16,10 @@
 
   <!-- TOPO -->
   <header class="hud-top">
-    <div class="brand-chip panel-glass" id="btnHome" title="Menu">
+    <button type="button" class="brand-chip panel-glass" id="btnHome" aria-label="Abrir menu principal">
       <span class="brand-mark">♔</span>
       <span class="brand-name">XADREZ ROYALE</span>
-    </div>
+    </button>
 
     <div class="turn-pill panel-glass" id="turnPill">
       <span class="turn-dot" id="turnDot"></span>
@@ -28,13 +28,22 @@
     </div>
 
     <div class="hud-right">
-      <button class="icon-btn panel-glass" id="btnArrowMode" title="Modo Desenhar Setas (✎)">✎</button>
-      <button class="icon-btn panel-glass" id="btnView2D" title="Alternar Vista 3D / 2D">2D</button>
-      <button class="icon-btn panel-glass" id="btnFlip" title="Girar Tabuleiro">⇅</button>
-      <button class="icon-btn panel-glass" id="btnSound" title="Som">🔊</button>
-      <button class="icon-btn panel-glass" id="btnSettings" title="Aparência">⚙</button>
+      <button type="button" class="icon-btn panel-glass" id="btnArrows" aria-label="Modo desenhar setas" aria-pressed="false" title="Modo Desenhar Setas (✎)">✎</button>
+      <button type="button" class="icon-btn panel-glass" id="btnView2D" aria-label="Alternar vista 2D" aria-pressed="false" title="Alternar Vista 3D / 2D (V)">2D</button>
+      <button type="button" class="icon-btn panel-glass" id="btnFlip" aria-label="Girar tabuleiro" title="Girar Tabuleiro (F)">⇅</button>
+      <button type="button" class="icon-btn panel-glass" id="btnSound" aria-label="Alternar som" aria-pressed="false" title="Som (M)">🔊</button>
+      <button type="button" class="icon-btn panel-glass" id="btnSettings" aria-label="Configurações" title="Aparência & Qualidade">⚙</button>
     </div>
   </header>
+
+  <!-- CHIP DE CORES DE SETAS (MOBILE / MODO SETAS) -->
+  <div class="arrow-chip panel-glass hide" id="arrowChip" style="display:none">
+    <button type="button" class="arrow-color-btn active" data-color="green" aria-label="Seta verde" style="--c:#22C55E"></button>
+    <button type="button" class="arrow-color-btn" data-color="red" aria-label="Seta vermelha" style="--c:#EF4444"></button>
+    <button type="button" class="arrow-color-btn" data-color="blue" aria-label="Seta azul" style="--c:#3B82F6"></button>
+    <button type="button" class="arrow-color-btn" data-color="yellow" aria-label="Seta amarela" style="--c:#F59E0B"></button>
+    <button type="button" class="mini-btn" id="btnClearArrows" aria-label="Limpar setas">Limpar</button>
+  </div>
 
   <!-- JOGADORES & RELÓGIOS -->
   <section class="players-bar">
@@ -69,36 +78,42 @@
   <aside class="history-box panel-glass" id="historyBox">
     <div class="hist-header-row">
       <span class="hist-head">LANCES</span>
-      <span class="hist-live-badge" id="reviewBadge" style="display:none">REVISÃO</span>
+      <button type="button" class="hist-live-badge hide" id="liveBanner" style="display:none">Voltar ao vivo</button>
     </div>
-    <div class="analysis-summary" id="analysisSummary" style="display:none"></div>
+    <div class="analysis-panel" id="analysisPanel" style="display:none">
+      <div class="analysis-summary" id="analysisSummary"></div>
+      <svg class="eval-graph" id="evalGraph" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+    </div>
     <div class="hist-list" id="histList"></div>
-    <div class="hist-nav">
-      <button class="nav-btn" id="btnNavFirst" title="Início">|&lt;</button>
-      <button class="nav-btn" id="btnNavPrev" title="Anterior">&lt;</button>
-      <button class="nav-btn" id="btnNavNext" title="Próximo">&gt;</button>
-      <button class="nav-btn" id="btnNavLast" title="Atual">&gt;|</button>
+    <div class="hist-nav" id="histNav">
+      <button type="button" class="nav-btn" id="btnHistFirst" aria-label="Primeiro lance" title="Início (Home)">|&lt;</button>
+      <button type="button" class="nav-btn" id="btnHistPrev" aria-label="Lance anterior" title="Anterior (←)">&lt;</button>
+      <button type="button" class="nav-btn" id="btnHistNext" aria-label="Próximo lance" title="Próximo (→)">&gt;</button>
+      <button type="button" class="nav-btn" id="btnHistLast" aria-label="Lance atual" title="Atual (End)">&gt;|</button>
     </div>
   </aside>
 
   <!-- AÇÕES INFERIORES -->
   <footer class="hud-actions">
-    <button class="act-btn panel-glass" id="btnHint" style="display:none">💡 <span>DICA</span></button>
-    <button class="act-btn panel-glass" id="btnUndo" style="display:none">↩ <span>DESFAZER</span></button>
-    <button class="act-btn panel-glass" id="btnHistoryToggle">📜 <span>LANCES</span></button>
-    <button class="act-btn panel-glass" id="btnDraw" style="display:none">🤝 <span>EMPATE</span></button>
-    <button class="act-btn panel-glass warn" id="btnResign" style="display:none">🏳 <span>DESISTIR</span></button>
-    <button class="act-btn panel-glass" id="btnNewMenu">☰ <span>MENU</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnHint" style="display:none" title="Dica (H)">💡 <span>DICA</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnUndo" style="display:none">↩ <span>DESFAZER</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnHistoryToggle">📜 <span>LANCES</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnDraw" style="display:none">🤝 <span>EMPATE</span></button>
+    <button type="button" class="act-btn panel-glass warn" id="btnResign" style="display:none">🏳 <span>DESISTIR</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnNewMenu">☰ <span>MENU</span></button>
   </footer>
 
   <!-- BANNER DE DICA / LINHA PRINCIPAL -->
-  <div class="hint-banner panel-glass" id="hintBanner" style="display:none"></div>
+  <div class="hint-banner panel-glass hide" id="hintBanner" style="display:none">
+    <span id="hintBannerTxt"></span>
+    <button type="button" class="hint-dismiss" id="btnHintDismiss" aria-label="Fechar dica">✕</button>
+  </div>
 
   <!-- BARRA DE EMPATE OFERECIDO -->
   <div class="draw-bar panel-glass" id="drawBar" style="display:none">
     <span>Oponente propôs empate</span>
-    <button class="mini-btn prim" id="btnDrawYes">Aceitar</button>
-    <button class="mini-btn" id="btnDrawNo">Recusar</button>
+    <button type="button" class="mini-btn prim" id="btnDrawYes">Aceitar</button>
+    <button type="button" class="mini-btn" id="btnDrawNo">Recusar</button>
   </div>
 
   <!-- TOAST -->
@@ -110,10 +125,10 @@
       <div class="modal-eyebrow">PROMOÇÃO</div>
       <h2 class="modal-title">Escolha a Peça</h2>
       <div class="promo-grid">
-        <button class="promo-btn" data-piece="q"><span>♕</span><small>Dama</small></button>
-        <button class="promo-btn" data-piece="r"><span>♖</span><small>Torre</small></button>
-        <button class="promo-btn" data-piece="b"><span>♗</span><small>Bispo</small></button>
-        <button class="promo-btn" data-piece="n"><span>♘</span><small>Cavalo</small></button>
+        <button type="button" class="promo-btn" data-piece="q"><span>♕</span><small>Dama</small></button>
+        <button type="button" class="promo-btn" data-piece="r"><span>♖</span><small>Torre</small></button>
+        <button type="button" class="promo-btn" data-piece="b"><span>♗</span><small>Bispo</small></button>
+        <button type="button" class="promo-btn" data-piece="n"><span>♘</span><small>Cavalo</small></button>
       </div>
     </div>
   </div>
@@ -127,10 +142,12 @@
         <p class="hero-sub">Partidas 3D de baixa latência para PC e celular, com IA em thread separada e modo online.</p>
       </div>
 
+      <button type="button" class="btn full" id="btnResumeGame" style="display:none">▶ RETOMAR PARTIDA</button>
+
       <div class="seg-group" id="segMode">
-        <button class="seg active" data-val="pve">Contra Máquina</button>
-        <button class="seg" data-val="pvp">2 Jogadores</button>
-        <button class="seg" data-val="online">Online</button>
+        <button type="button" class="seg active" data-val="pve">Contra Máquina</button>
+        <button type="button" class="seg" data-val="pvp">2 Jogadores</button>
+        <button type="button" class="seg" data-val="online">Online</button>
       </div>
 
       <!-- OPÇÕES LOCAIS / IA -->
@@ -138,31 +155,31 @@
         <div class="field-row" id="diffRow">
           <label>Nível da IA</label>
           <div class="seg-group compact" id="segDiff">
-            <button class="seg" data-val="1">Casual</button>
-            <button class="seg active" data-val="2">Clube</button>
-            <button class="seg" data-val="3">Mestre</button>
+            <button type="button" class="seg" data-val="1">Casual</button>
+            <button type="button" class="seg active" data-val="2">Clube</button>
+            <button type="button" class="seg" data-val="3">Mestre</button>
           </div>
         </div>
 
         <div class="field-row" id="sideRow">
           <label>Jogar de</label>
           <div class="seg-group compact" id="segSide">
-            <button class="seg active" data-val="w">Brancas</button>
-            <button class="seg" data-val="b">Pretas</button>
+            <button type="button" class="seg active" data-val="w">Brancas</button>
+            <button type="button" class="seg" data-val="b">Pretas</button>
           </div>
         </div>
 
         <div class="field-row">
           <label>Relógio</label>
           <div class="seg-group compact" id="segTcLocal">
-            <button class="seg active" data-val="0">Livre</button>
-            <button class="seg" data-val="180000">3 min</button>
-            <button class="seg" data-val="300000">5 min</button>
-            <button class="seg" data-val="600000">10 min</button>
+            <button type="button" class="seg active" data-val="0">Livre</button>
+            <button type="button" class="seg" data-val="180000">3 min</button>
+            <button type="button" class="seg" data-val="300000">5 min</button>
+            <button type="button" class="seg" data-val="600000">10 min</button>
           </div>
         </div>
 
-        <button class="btn prim full" id="btnStartLocal">INICIAR PARTIDA</button>
+        <button type="button" class="btn prim full" id="btnStartLocal">INICIAR PARTIDA</button>
       </div>
 
       <!-- OPÇÕES ONLINE -->
@@ -172,47 +189,47 @@
             <input type="text" id="nickInput" class="txt-input" maxlength="16" placeholder="SEU APELIDO">
             <div class="rating-line" id="ratingLine">Rating: 1200</div>
           </div>
-          <button class="btn-google" id="btnGoogle">Conectar Google</button>
+          <button type="button" class="btn-google" id="btnGoogle">Conectar Google</button>
         </div>
 
         <div class="field-row">
           <label>Controle de Tempo</label>
           <div class="seg-group compact" id="segTcOnline">
-            <button class="seg" data-val="1+0">1+0</button>
-            <button class="seg active" data-val="3+2">3+2</button>
-            <button class="seg" data-val="5+0">5+0</button>
-            <button class="seg" data-val="10+0">10+0</button>
+            <button type="button" class="seg" data-val="1+0">1+0</button>
+            <button type="button" class="seg active" data-val="3+2">3+2</button>
+            <button type="button" class="seg" data-val="5+0">5+0</button>
+            <button type="button" class="seg" data-val="10+0">10+0</button>
           </div>
         </div>
 
         <div id="onlineStatus" class="status-msg" style="display:none"></div>
 
         <div id="onlineActions">
-          <button class="btn prim full" id="btnQuickMatch">PROCURAR OPONENTE</button>
+          <button type="button" class="btn prim full" id="btnQuickMatch">PROCURAR OPONENTE</button>
           <div class="two-col">
-            <button class="btn" id="btnCreateRoom">Criar Sala</button>
-            <button class="btn" id="btnShowJoin">Entrar com Código</button>
+            <button type="button" class="btn" id="btnCreateRoom">Criar Sala</button>
+            <button type="button" class="btn" id="btnShowJoin">Entrar com Código</button>
           </div>
-          <button class="btn full" id="btnLeaderboard">🏆 Ranking</button>
+          <button type="button" class="btn full" id="btnLeaderboard">🏆 Ranking</button>
         </div>
 
         <div id="searchBox" style="display:none">
           <div class="status-msg" id="searchTxt">Procurando oponente…</div>
-          <button class="btn full" id="btnCancelSearch">Cancelar Busca</button>
+          <button type="button" class="btn full" id="btnCancelSearch">Cancelar Busca</button>
         </div>
 
         <div id="roomBox" style="display:none">
           <div class="room-code" id="roomCodeTxt">------</div>
           <div class="two-col">
-            <button class="btn prim" id="btnCopyRoom">Copiar Link</button>
-            <button class="btn" id="btnCancelRoom">Cancelar</button>
+            <button type="button" class="btn prim" id="btnCopyRoom">Copiar Link</button>
+            <button type="button" class="btn" id="btnCancelRoom">Cancelar</button>
           </div>
         </div>
 
         <div id="joinBox" style="display:none">
           <div class="two-col">
             <input type="text" id="joinInput" class="txt-input" maxlength="8" placeholder="CÓDIGO">
-            <button class="btn prim" id="btnJoinRoom">Entrar</button>
+            <button type="button" class="btn prim" id="btnJoinRoom">Entrar</button>
           </div>
         </div>
       </div>
@@ -223,7 +240,7 @@
   <div class="overlay hide" id="settingsOverlay">
     <div class="modal panel-glass">
       <div class="modal-eyebrow">ESTÚDIO 3D</div>
-      <h2 class="modal-title">Tabuleiro & Peças</h2>
+      <h2 class="modal-title">Tabuleiro & Qualidade</h2>
       <div class="field-row">
         <label>Tabuleiro</label>
         <div class="swatch-row" id="boardSwatches"></div>
@@ -233,13 +250,29 @@
         <div class="swatch-row" id="pieceSwatches"></div>
       </div>
       <div class="field-row">
-        <label>Barra de Avaliação (Local)</label>
-        <div class="seg-group compact" id="segEval">
-          <button class="seg active" data-val="0">Oculta</button>
-          <button class="seg" data-val="1">Visível</button>
+        <label>Qualidade Gráfica</label>
+        <div class="seg-group compact" id="segQuality">
+          <button type="button" class="seg active" data-val="auto">Auto</button>
+          <button type="button" class="seg" data-val="high">Alta</button>
+          <button type="button" class="seg" data-val="medium">Média</button>
+          <button type="button" class="seg" data-val="low">Leve</button>
         </div>
       </div>
-      <button class="btn prim full" id="btnCloseSettings">CONCLUIR</button>
+      <div class="field-row">
+        <label>Vibração Tátil</label>
+        <div class="seg-group compact" id="segHaptics">
+          <button type="button" class="seg active" data-val="1">Ligada</button>
+          <button type="button" class="seg" data-val="0">Desligada</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>Barra de Avaliação (Local)</label>
+        <div class="seg-group compact" id="segEval">
+          <button type="button" class="seg active" data-val="0">Oculta</button>
+          <button type="button" class="seg" data-val="1">Visível</button>
+        </div>
+      </div>
+      <button type="button" class="btn prim full" id="btnCloseSettings">CONCLUIR</button>
     </div>
   </div>
 
@@ -249,7 +282,7 @@
       <div class="modal-eyebrow">CLASSIFICAÇÃO ELO</div>
       <h2 class="modal-title">Top 10 Jogadores</h2>
       <div id="lbList" class="lb-list"></div>
-      <button class="btn full" id="btnCloseLb">FECHAR</button>
+      <button type="button" class="btn full" id="btnCloseLb">FECHAR</button>
     </div>
   </div>
 
@@ -260,9 +293,10 @@
       <h2 class="modal-title" id="overTitle">Brancas Vencem</h2>
       <p class="hero-sub" id="overSub">Xeque-mate</p>
       <div id="overDelta" class="delta-badge" style="display:none"></div>
-      <button class="btn prim full" id="btnRematch">JOGAR NOVAMENTE</button>
-      <button class="btn full" id="btnAnalyze" style="display:none">🔍 ANALISAR PARTIDA</button>
-      <button class="btn full" id="btnOverMenu">VOLTAR AO MENU</button>
+      <button type="button" class="btn prim full" id="btnRematch">JOGAR NOVAMENTE</button>
+      <button type="button" class="btn full" id="btnAnalyze" style="display:none">🔍 ANALISAR PARTIDA</button>
+      <button type="button" class="btn full" id="btnViewBoard">👁 VER TABULEIRO</button>
+      <button type="button" class="btn full" id="btnOverMenu">VOLTAR AO MENU</button>
     </div>
   </div>
 

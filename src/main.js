@@ -11,6 +11,7 @@ import {
   summarizeAnalysis, isPseudoLegalPremove, isPawnPromotionMove
 } from './core/game-helpers.js';
 import { AudioManager } from './core/audio.js';
+import { setHaptics, vibrate } from './core/utils.js';
 import { formatClock } from './core/elo.js';
 import { BOARD_THEMES, PIECE_THEMES } from './engine/themes.js';
 import { applyQualityTier } from './engine/quality.js';
@@ -135,14 +136,16 @@ function toast(msg, ms = 2600) {
 
 function hideHint() {
   fx.clearHint();
-  $('#hintBanner').style.display = 'none';
+  const hb = $('#hintBanner');
+  hb.classList.add('hide');
+  hb.style.display = 'none';
 }
 
 /* ============ TEMAS ============ */
 function applyBoardTheme(i) {
   boardThemeIdx = i;
   const t = BOARD_THEMES[i] || BOARD_THEMES[0];
-  applyBoardMaterialTextures(materials, t, qualityTier);
+  boardCtx.setTheme(i, qualityTier);
   scene.background = new THREE.Color(t.bg);
   document.querySelectorAll('#boardSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
   savePrefs();
@@ -225,7 +228,9 @@ function updateTurnUI(viewChess = chess) {
   $('#turnSub').textContent = viewChess.inCheck() ? '· XEQUE!' : '';
   $('#cardW').classList.toggle('active', gameActive && !isReview && turn === 'w');
   $('#cardB').classList.toggle('active', gameActive && !isReview && turn === 'b');
-  $('#reviewBadge').style.display = isReview ? 'inline-block' : 'none';
+  const lb = $('#liveBanner');
+  lb.classList.toggle('hide', !isReview);
+  lb.style.display = isReview ? 'inline-block' : 'none';
 
   if (viewChess.inCheck()) {
     const b = viewChess.board();
@@ -240,6 +245,7 @@ function updateTurnUI(viewChess = chess) {
   $('#btnUndo').style.display = (gameActive && !isReview && mode !== 'online' && chess.history().length > 0) ? 'flex' : 'none';
   $('#btnDraw').style.display = (gameActive && mode === 'online') ? 'flex' : 'none';
   $('#btnResign').style.display = (gameActive && mode !== 'pvp') ? 'flex' : 'none';
+  $('#btnResumeGame').style.display = gameActive ? 'block' : 'none';
 }
 
 function updateClocksUI() {
@@ -284,9 +290,12 @@ function renderHistory() {
       }
       const plyNum = plyIdx + 1;
       const btn = document.createElement('button');
+      btn.type = 'button';
       btn.className = 'hist-move' + (activePly === plyNum ? ' active' : '');
       btn.dataset.ply = String(plyNum);
-      const badge = plyAnalyses[plyIdx]?.classification ? CLS_BADGE[plyAnalyses[plyIdx].classification] : null;
+      const badge = plyAnalyses[plyIdx]?.classification?.code
+        ? CLS_BADGE[plyAnalyses[plyIdx].classification.code]
+        : (typeof plyAnalyses[plyIdx]?.classification === 'string' ? CLS_BADGE[plyAnalyses[plyIdx].classification] : null);
       btn.innerHTML = `<span>${hist[plyIdx]}</span>` + (badge ? `<span class="hist-cls ${badge.cls}">${badge.sym}</span>` : '');
       btn.onclick = () => goToPly(plyNum);
       row.appendChild(btn);
@@ -296,10 +305,10 @@ function renderHistory() {
   list.scrollTop = list.scrollHeight;
 
   const total = hist.length;
-  $('#btnNavFirst').disabled = activePly <= 0;
-  $('#btnNavPrev').disabled = activePly <= 0;
-  $('#btnNavNext').disabled = activePly >= total;
-  $('#btnNavLast').disabled = activePly >= total;
+  $('#btnHistFirst').disabled = activePly <= 0;
+  $('#btnHistPrev').disabled = activePly <= 0;
+  $('#btnHistNext').disabled = activePly >= total;
+  $('#btnHistLast').disabled = activePly >= total;
 }
 
 function goToPly(ply) {
@@ -482,10 +491,13 @@ async function executeMove(moveInput, isRemote = false) {
       animatePieceMove(rook, fromRC.r, rookToC, false, 200);
     }
     audio.castle();
+    vibrate([20, 40, 20]);
   } else if (move.captured) {
     audio.capture();
+    vibrate(35);
   } else {
     audio.move();
+    vibrate(12);
   }
 
   if (move.promotion) {
@@ -591,7 +603,7 @@ function annotationColor(payload) {
   if (payload?.shiftKey) return 'red';
   if (payload?.altKey) return 'blue';
   if (payload?.ctrlKey || payload?.metaKey) return 'yellow';
-  return 'green';
+  return cam.arrowMode ? activeArrowColor : 'green';
 }
 
 function handleAnnotateStart(payload) {
@@ -789,12 +801,33 @@ function startMatch(newMode, opts = {}) {
 }
 
 /* ============ ANÁLISE PÓS-PARTIDA ============ */
+function renderEvalGraph() {
+  const svg = $('#evalGraph');
+  if (!svg || !plyAnalyses.length) return;
+  const w = 200, h = 48;
+  const pts = plyAnalyses.map((a, i) => {
+    const x = plyAnalyses.length === 1 ? w / 2 : (i / (plyAnalyses.length - 1)) * w;
+    const wp = cpToWinProb(a?.evalAfterCp ?? a?.evalCp ?? 0, a?.mateIn ?? null);
+    const y = (1 - wp) * (h - 6) + 3;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  svg.innerHTML =
+    `<line x1="0" y1="24" x2="200" y2="24" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>` +
+    `<polyline fill="none" stroke="#C99A3E" stroke-width="2" points="${pts.join(' ')}"/>`;
+  svg.onclick = e => {
+    const rect = svg.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetPly = Math.max(1, Math.min(plyAnalyses.length, Math.round(ratio * (plyAnalyses.length - 1)) + 1));
+    goToPly(targetPly);
+  };
+}
+
 async function runPostGameAnalysis() {
   const histVerbose = chess.history({ verbose: true });
   if (!histVerbose.length) return;
   $('#overOverlay').classList.add('hide');
   $('#historyBox').classList.add('open');
-  $('#analysisSummary').style.display = 'block';
+  $('#analysisPanel').style.display = 'flex';
   $('#analysisSummary').textContent = 'Analisando partida…';
 
   const fens = [new Chess().fen()];
@@ -808,21 +841,25 @@ async function runPostGameAnalysis() {
 
   plyAnalyses = new Array(moves.length);
   activeAnalysisCallback = prog => {
-    if (prog.plyIndex !== undefined && prog.entry) {
-      plyAnalyses[prog.plyIndex] = prog.entry;
+    const idx = prog.plyIndex ?? (prog.done ? prog.done - 1 : undefined);
+    if (idx !== undefined && prog.entry) {
+      plyAnalyses[idx] = prog.entry;
       renderHistory();
     }
-    $('#analysisSummary').textContent = `Analisando lance ${prog.completed || 0}/${moves.length}…`;
+    $('#analysisSummary').textContent = `Analisando lance ${prog.done ?? prog.completed ?? 0}/${moves.length}…`;
   };
 
   const res = await askWorker('analyzeGame', { fens, moves, depth: 2 });
   activeAnalysisCallback = null;
   if (res.ok && res.plies) {
     plyAnalyses = res.plies;
-    const sum = summarizeAnalysis(plyAnalyses);
+    const sum = res.summary || summarizeAnalysis(plyAnalyses);
+    const accW = sum.whiteAccuracy ?? sum.accuracyW ?? 0;
+    const accB = sum.blackAccuracy ?? sum.accuracyB ?? 0;
     $('#analysisSummary').innerHTML =
-      `Precisão: <strong>B ${sum.accuracyW}%</strong> · <strong>P ${sum.accuracyB}%</strong><br>` +
-      `★ ${sum.counts.best} · ?! ${sum.counts.inaccuracy} · ? ${sum.counts.mistake} · ?? ${sum.counts.blunder}`;
+      `Precisão: <strong>B ${accW}%</strong> · <strong>P ${accB}%</strong><br>` +
+      `★ ${sum.counts.best || 0} · ?! ${sum.counts.inaccuracy || 0} · ? ${sum.counts.mistake || 0} · ?? ${sum.counts.blunder || 0}`;
+    renderEvalGraph();
     renderHistory();
     goToPly(1);
   }
@@ -831,6 +868,7 @@ async function runPostGameAnalysis() {
 /* ============ BINDINGS DE UI ============ */
 function bindSeg(sel, cb) {
   const root = $(sel);
+  if (!root) return;
   root.querySelectorAll('.seg').forEach(btn => {
     btn.onclick = () => {
       root.querySelectorAll('.seg').forEach(b => b.classList.remove('active'));
@@ -859,59 +897,98 @@ bindSeg('#segTcOnline', v => {
 });
 bindSeg('#segEval', v => { evalVisible = v === '1'; savePrefs(); refreshEval(); });
 
+let manualQualityMode = 'auto';
+bindSeg('#segQuality', v => {
+  manualQualityMode = v;
+  qualityTier = v === 'auto' ? initTier : v;
+  applyQualityTier(qualityTier, {
+    renderer, lights, fx, materials,
+    boardTheme: BOARD_THEMES[boardThemeIdx],
+    board: boardCtx,
+    pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx] }
+  });
+});
+bindSeg('#segHaptics', v => { setHaptics(v === '1'); });
+
+let activeArrowColor = 'green';
+document.querySelectorAll('.arrow-color-btn').forEach(btn => {
+  btn.onclick = () => {
+    activeArrowColor = btn.dataset.color || 'green';
+    document.querySelectorAll('.arrow-color-btn').forEach(b => b.classList.toggle('active', b === btn));
+  };
+});
+$('#btnClearArrows').onclick = () => fx.clearManualAnnotations();
+
 $('#btnStartLocal').onclick = () => startMatch(mode === 'pvp' ? 'pvp' : 'pve');
+$('#btnResumeGame').onclick = () => $('#menuOverlay').classList.add('hide');
 $('#btnNewMenu').onclick = () => $('#menuOverlay').classList.remove('hide');
 $('#btnHome').onclick = () => $('#menuOverlay').classList.remove('hide');
-$('#btnArrowMode').onclick = () => {
+
+$('#btnArrows').onclick = () => {
   const next = !cam.arrowMode;
   cam.setArrowMode(next);
-  $('#btnArrowMode').classList.toggle('active', next);
+  $('#btnArrows').classList.toggle('active', next);
+  $('#btnArrows').setAttribute('aria-pressed', String(next));
+  const chip = $('#arrowChip');
+  chip.classList.toggle('hide', !next);
+  chip.style.display = next ? 'flex' : 'none';
   toast(next ? 'Modo Setas: toque/arraste no tabuleiro' : 'Modo Jogo restaurado');
 };
+
 $('#btnView2D').onclick = async () => {
   const is2D = await cam.toggleTopDown();
   $('#btnView2D').classList.toggle('active', is2D);
+  $('#btnView2D').setAttribute('aria-pressed', String(is2D));
 };
 $('#btnFlip').onclick = () => cam.flipBoard();
 $('#btnSound').onclick = () => {
   audio.muted = !audio.muted;
   $('#btnSound').textContent = audio.muted ? '🔇' : '🔊';
+  $('#btnSound').setAttribute('aria-pressed', String(audio.muted));
   savePrefs();
 };
 $('#btnSettings').onclick = () => $('#settingsOverlay').classList.remove('hide');
 $('#btnCloseSettings').onclick = () => $('#settingsOverlay').classList.add('hide');
 $('#btnHistoryToggle').onclick = () => $('#historyBox').classList.toggle('open');
 
-$('#btnNavFirst').onclick = () => goToPly(0);
-$('#btnNavPrev').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) - 1);
-$('#btnNavNext').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) + 1);
-$('#btnNavLast').onclick = () => goToPly(chess.history().length);
+$('#btnHistFirst').onclick = () => goToPly(0);
+$('#btnHistPrev').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) - 1);
+$('#btnHistNext').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) + 1);
+$('#btnHistLast').onclick = () => goToPly(chess.history().length);
+$('#liveBanner').onclick = () => goToPly(chess.history().length);
 
+$('#btnHintDismiss').onclick = hideHint;
 $('#btnHint').onclick = async () => {
   if (!canUseHint() || busy) return;
-  const res = await askWorker('bestMove', { fen: chess.fen(), depth: 3 });
-  if (!res.ok || !res.move) return;
-  const f = squareToRC(res.move.from), t = squareToRC(res.move.to);
-  const moving = chess.get(res.move.from);
-  const pv = res.move.pv || [res.move.san];
-  let replyOpts = {};
-  if (pv.length >= 2) {
-    const tmp = new Chess(chess.fen());
-    tmp.move({ from: res.move.from, to: res.move.to, promotion: res.move.promotion });
-    const rep = tmp.move(pv[1]);
-    if (rep) {
-      const rf = squareToRC(rep.from), rt = squareToRC(rep.to);
-      replyOpts = { replyFromR: rf.r, replyFromC: rf.c, replyToR: rt.r, replyToC: rt.c };
-    }
+  const reqFen = chess.fen();
+  const btn = $('#btnHint');
+  btn.disabled = true;
+  const prevHtml = btn.innerHTML;
+  btn.innerHTML = '⏳ <span>PENSANDO</span>';
+  try {
+    const res = await askWorker('bestMove', { fen: reqFen, depth: 3 });
+    if (!res.ok || !res.move || chess.fen() !== reqFen) return;
+    const moving = chess.get(res.move.from);
+    const pv = Array.isArray(res.move.pv) && res.move.pv.length
+      ? res.move.pv
+      : [{ from: res.move.from, to: res.move.to, promotion: res.move.promotion, san: res.move.san }];
+    fx.setHint({
+      from: res.move.from,
+      to: res.move.to,
+      pieceType: moving?.type || 'p',
+      color: moving?.color || chess.turn(),
+      promotion: res.move.promotion,
+      pv
+    });
+    const pvLine = pv.slice(0, 4).map(m => m.san || `${m.from}-${m.to}`).join(' ');
+    $('#hintBannerTxt').innerHTML = `<strong>Dica: ${res.move.san}</strong> · ${pvLine}`;
+    const hb = $('#hintBanner');
+    hb.classList.remove('hide');
+    hb.style.display = 'flex';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = prevHtml;
   }
-  fx.setHint({
-    fromR: f.r, fromC: f.c, toR: t.r, toC: t.c,
-    pieceType: res.move.promotion || moving?.type || 'p',
-    color: moving?.color || chess.turn(),
-    ...replyOpts
-  });
-  $('#hintBanner').innerHTML = `<strong>Dica: ${res.move.san}</strong> · Linha: ${pv.slice(0, 4).join(' ')}`;
-  $('#hintBanner').style.display = 'block';
 };
 
 $('#btnUndo').onclick = () => {
@@ -925,8 +1002,23 @@ $('#btnUndo').onclick = () => {
   refreshEval();
 };
 
+let resignArmed = false;
+let resignTimer = null;
 $('#btnResign').onclick = () => {
   if (!gameActive) return;
+  if (!resignArmed) {
+    resignArmed = true;
+    $('#btnResign').innerHTML = '🏳 <span>CONFIRMAR?</span>';
+    clearTimeout(resignTimer);
+    resignTimer = setTimeout(() => {
+      resignArmed = false;
+      $('#btnResign').innerHTML = '🏳 <span>DESISTIR</span>';
+    }, 3000);
+    return;
+  }
+  resignArmed = false;
+  clearTimeout(resignTimer);
+  $('#btnResign').innerHTML = '🏳 <span>DESISTIR</span>';
   if (mode === 'online') online.resign();
   else endGameFromBoard(playerSide === 'w' ? 'b' : 'w', 'Desistência');
 };
@@ -941,6 +1033,7 @@ $('#btnDrawYes').onclick = () => { $('#drawBar').style.display = 'none'; online.
 $('#btnDrawNo').onclick = () => { $('#drawBar').style.display = 'none'; online.respondDraw(false); };
 
 $('#btnAnalyze').onclick = runPostGameAnalysis;
+$('#btnViewBoard').onclick = () => $('#overOverlay').classList.add('hide');
 $('#btnRematch').onclick = () => {
   if (mode === 'online') {
     $('#overOverlay').classList.add('hide');
@@ -953,6 +1046,26 @@ $('#btnOverMenu').onclick = () => {
   $('#overOverlay').classList.add('hide');
   $('#menuOverlay').classList.remove('hide');
 };
+
+window.addEventListener('keydown', e => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  if (e.key === 'Escape') {
+    for (const id of ['settingsOverlay', 'lbOverlay', 'promoModal']) {
+      $(`#${id}`)?.classList.add('hide');
+    }
+    if (premove) clearPremove();
+    if (cam.arrowMode) $('#btnArrows').click();
+    return;
+  }
+  if (e.key === 'v' || e.key === 'V') $('#btnView2D').click();
+  else if (e.key === 'f' || e.key === 'F') $('#btnFlip').click();
+  else if (e.key === 'h' || e.key === 'H') $('#btnHint').click();
+  else if (e.key === 'm' || e.key === 'M') $('#btnSound').click();
+  else if (e.key === 'ArrowLeft') $('#btnHistPrev').click();
+  else if (e.key === 'ArrowRight') $('#btnHistNext').click();
+  else if (e.key === 'Home') $('#btnHistFirst').click();
+  else if (e.key === 'End') $('#btnHistLast').click();
+});
 
 /* Swatches de temas */
 BOARD_THEMES.forEach((t, i) => {
