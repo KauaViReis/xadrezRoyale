@@ -49,7 +49,7 @@ export function createScene(canvas) {
   sun.shadow.radius = qualityTier === 'high' ? 3.5 : 2;
   scene.add(sun);
 
-  const fill = new THREE.PointLight(0xFFE0B2, qualityTier === 'low' ? 0 : 0.45, 36);
+  const fill = new THREE.PointLight(0xFFE0B2, qualityTier === 'low' ? 0 : (qualityTier === 'medium' ? 0.35 : 0.45), 36);
   fill.position.set(-7, 6, -6);
   scene.add(fill);
 
@@ -61,7 +61,8 @@ export function createScene(canvas) {
     lightSq: new THREE.MeshStandardMaterial({ roughness: 0.52, metalness: 0.04 }),
     darkSq:  new THREE.MeshStandardMaterial({ roughness: 0.48, metalness: 0.06 }),
     frame:   new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.14 }),
-    table:   new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.04 })
+    table:   new THREE.MeshStandardMaterial({ roughness: 0.72, metalness: 0.04 }),
+    fillet:  new THREE.MeshStandardMaterial({ color: 0xC99A3E, metalness: 0.85, roughness: 0.24 })
   };
 
   function resize() {

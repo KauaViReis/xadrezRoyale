@@ -10,7 +10,7 @@ export class AudioManager {
   }
 
   _ensure() {
-    if (this.muted) return null;
+    if (this.muted || typeof window === 'undefined') return null;
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
@@ -56,6 +56,22 @@ export class AudioManager {
   }
   win() {
     [440, 554, 659, 880].forEach((f, i) => setTimeout(() => this._tone(f, 0.24, 'triangle', 0.13), i * 85));
+  }
+  defeat() {
+    [392, 349, 311, 261].forEach((f, i) => setTimeout(() => this._tone(f, 0.22, 'triangle', 0.12), i * 95));
+  }
+  draw() {
+    [440, 392, 440].forEach((f, i) => setTimeout(() => this._tone(f, 0.16, 'sine', 0.10), i * 90));
+  }
+  premove() {
+    this._tone(420, 0.04, 'sine', 0.07, 580);
+    setTimeout(() => this._tone(580, 0.035, 'sine', 0.04), 35);
+  }
+  arrow() {
+    this._tone(340, 0.03, 'sine', 0.035, 420);
+  }
+  hint() {
+    [587, 880].forEach((f, i) => setTimeout(() => this._tone(f, 0.14, 'sine', 0.08), i * 65));
   }
   tick() { this._tone(960, 0.03, 'sine', 0.04); }
   error() { this._tone(160, 0.1, 'sawtooth', 0.08, 120); }

@@ -28,6 +28,7 @@
     </div>
 
     <div class="hud-right">
+      <button class="icon-btn panel-glass" id="btnArrowMode" title="Modo Desenhar Setas (✎)">✎</button>
       <button class="icon-btn panel-glass" id="btnView2D" title="Alternar Vista 3D / 2D">2D</button>
       <button class="icon-btn panel-glass" id="btnFlip" title="Girar Tabuleiro">⇅</button>
       <button class="icon-btn panel-glass" id="btnSound" title="Som">🔊</button>
@@ -64,20 +65,34 @@
     <span class="eval-num" id="evalNum">0.0</span>
   </aside>
 
-  <!-- HISTÓRICO SAN LATERAL (DESKTOP) -->
+  <!-- HISTÓRICO SAN & ANÁLISE -->
   <aside class="history-box panel-glass" id="historyBox">
-    <div class="hist-head">LANCES</div>
+    <div class="hist-header-row">
+      <span class="hist-head">LANCES</span>
+      <span class="hist-live-badge" id="reviewBadge" style="display:none">REVISÃO</span>
+    </div>
+    <div class="analysis-summary" id="analysisSummary" style="display:none"></div>
     <div class="hist-list" id="histList"></div>
+    <div class="hist-nav">
+      <button class="nav-btn" id="btnNavFirst" title="Início">|&lt;</button>
+      <button class="nav-btn" id="btnNavPrev" title="Anterior">&lt;</button>
+      <button class="nav-btn" id="btnNavNext" title="Próximo">&gt;</button>
+      <button class="nav-btn" id="btnNavLast" title="Atual">&gt;|</button>
+    </div>
   </aside>
 
   <!-- AÇÕES INFERIORES -->
   <footer class="hud-actions">
     <button class="act-btn panel-glass" id="btnHint" style="display:none">💡 <span>DICA</span></button>
     <button class="act-btn panel-glass" id="btnUndo" style="display:none">↩ <span>DESFAZER</span></button>
+    <button class="act-btn panel-glass" id="btnHistoryToggle">📜 <span>LANCES</span></button>
     <button class="act-btn panel-glass" id="btnDraw" style="display:none">🤝 <span>EMPATE</span></button>
     <button class="act-btn panel-glass warn" id="btnResign" style="display:none">🏳 <span>DESISTIR</span></button>
     <button class="act-btn panel-glass" id="btnNewMenu">☰ <span>MENU</span></button>
   </footer>
+
+  <!-- BANNER DE DICA / LINHA PRINCIPAL -->
+  <div class="hint-banner panel-glass" id="hintBanner" style="display:none"></div>
 
   <!-- BARRA DE EMPATE OFERECIDO -->
   <div class="draw-bar panel-glass" id="drawBar" style="display:none">
@@ -246,6 +261,7 @@
       <p class="hero-sub" id="overSub">Xeque-mate</p>
       <div id="overDelta" class="delta-badge" style="display:none"></div>
       <button class="btn prim full" id="btnRematch">JOGAR NOVAMENTE</button>
+      <button class="btn full" id="btnAnalyze" style="display:none">🔍 ANALISAR PARTIDA</button>
       <button class="btn full" id="btnOverMenu">VOLTAR AO MENU</button>
     </div>
   </div>

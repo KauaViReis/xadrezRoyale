@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { rcToSquare } from '../core/chess-engine.js';
 import { clamp, tween, easeIO } from '../core/utils.js';
 
 export class CameraController {
@@ -21,10 +22,93 @@ export class CameraController {
     this.downY = 0;
     this.moved = 0;
     this.pinchD = 0;
+
+    this.arrowMode = false;
+    this.arrowDragging = false;
+    this.arrowPointerId = null;
+    this.arrowMoved = 0;
+
+    this.rightDown = false;
+    this.rightPointerId = null;
+    this.rightLastX = 0;
+    this.rightLastY = 0;
+    this.rightMoved = 0;
+
+    this._raycaster = new THREE.Raycaster();
+    this._ndc = new THREE.Vector2();
+    this._boardPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this._planeHit = new THREE.Vector3();
+
     this.onTap = null;
+    this.onLeftTap = null;
+    this.onRightDown = null;
+    this.onRightDrag = null;
+    this.onRightUp = null;
+    this.onArrowDragStart = null;
+    this.onArrowDragMove = null;
+    this.onArrowDragEnd = null;
 
     this._bind();
     this.sync();
+  }
+
+  setArrowMode(enabled) {
+    const next = Boolean(enabled);
+    this.arrowMode = next;
+    if (!next && this.arrowDragging) {
+      this.arrowDragging = false;
+      this.arrowPointerId = null;
+      this.arrowMoved = 0;
+      this.onArrowDragEnd?.({
+        clientX: 0,
+        clientY: 0,
+        square: null,
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        moved: 0,
+        cancelled: true
+      });
+    }
+    if (next && this.dragging) {
+      this.dragging = false;
+    }
+  }
+
+  screenToSquare(clientX, clientY) {
+    if (!this.canvas || !this.camera) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
+
+    this._ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    this._ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    this.camera.updateMatrixWorld();
+    this._raycaster.setFromCamera(this._ndc, this.camera);
+
+    const hit = this._raycaster.ray.intersectPlane(this._boardPlane, this._planeHit);
+    if (!hit) return null;
+
+    const { x, z } = hit;
+    if (x < -4 || x > 4 || z < -4 || z > 4) return null;
+
+    const c = clamp(Math.floor(x + 4), 0, 7);
+    const r = clamp(Math.floor(z + 4), 0, 7);
+    return { r, c, sq: rcToSquare(r, c) };
+  }
+
+  _pointerPayload(e, moved = 0) {
+    return {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      square: this.screenToSquare(e.clientX, e.clientY),
+      shiftKey: !!e.shiftKey,
+      altKey: !!e.altKey,
+      ctrlKey: !!e.ctrlKey,
+      metaKey: !!e.metaKey,
+      moved,
+      event: e
+    };
   }
 
   sync() {
@@ -107,16 +191,48 @@ export class CameraController {
 
   _bind() {
     const el = this.canvas;
+    if (!el || typeof el.addEventListener !== 'function') return;
+
+    el.addEventListener('contextmenu', e => e.preventDefault());
+
     el.addEventListener('pointerdown', e => {
-      if (e.button !== 0 && e.pointerType === 'mouse') return;
-      el.setPointerCapture(e.pointerId);
+      try { el.setPointerCapture?.(e.pointerId); } catch { /* noop */ }
+
+      /* Botão direito isolado para marcações / setas manuais no PC */
+      if (e.pointerType === 'mouse' && e.button === 2) {
+        this.rightDown = true;
+        this.rightPointerId = e.pointerId;
+        this.rightLastX = e.clientX;
+        this.rightLastY = e.clientY;
+        this.rightMoved = 0;
+        this.onRightDown?.(this._pointerPayload(e, 0));
+        return;
+      }
+
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.pointers.size === 1) {
-        this.dragging = true;
-        this.downX = e.clientX;
-        this.downY = e.clientY;
-        this.moved = 0;
+        if (this.arrowMode) {
+          this.dragging = false;
+          this.arrowDragging = true;
+          this.arrowPointerId = e.pointerId;
+          this.arrowMoved = 0;
+          this.onArrowDragStart?.(this._pointerPayload(e, 0));
+        } else {
+          this.dragging = true;
+          this.downX = e.clientX;
+          this.downY = e.clientY;
+          this.moved = 0;
+        }
       } else if (this.pointers.size === 2) {
+        if (this.arrowDragging) {
+          const moved = this.arrowMoved;
+          this.arrowDragging = false;
+          this.arrowPointerId = null;
+          this.arrowMoved = 0;
+          this.onArrowDragEnd?.({ ...this._pointerPayload(e, moved), cancelled: true });
+        }
         this.dragging = false;
         const pts = [...this.pointers.values()];
         this.pinchD = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -124,13 +240,26 @@ export class CameraController {
     });
 
     el.addEventListener('pointermove', e => {
+      if (this.rightDown && e.pointerId === this.rightPointerId) {
+        const dx = e.clientX - this.rightLastX;
+        const dy = e.clientY - this.rightLastY;
+        this.rightLastX = e.clientX;
+        this.rightLastY = e.clientY;
+        this.rightMoved += Math.hypot(dx, dy);
+        this.onRightDrag?.(this._pointerPayload(e, this.rightMoved));
+        return;
+      }
+
       if (!this.pointers.has(e.pointerId)) return;
       const prev = this.pointers.get(e.pointerId);
       const dx = e.clientX - prev.x;
       const dy = e.clientY - prev.y;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (this.pointers.size === 1 && this.dragging) {
+      if (this.pointers.size === 1 && this.arrowMode && this.arrowDragging && e.pointerId === this.arrowPointerId) {
+        this.arrowMoved += Math.hypot(dx, dy);
+        this.onArrowDragMove?.(this._pointerPayload(e, this.arrowMoved));
+      } else if (this.pointers.size === 1 && this.dragging) {
         this.moved += Math.hypot(dx, dy);
         if (this.moved > 5) {
           this.theta -= dx * 0.0065;
@@ -149,11 +278,36 @@ export class CameraController {
     });
 
     const up = e => {
-      const wasTap = this.pointers.size === 1 && this.dragging && this.moved < 8;
+      try { el.releasePointerCapture?.(e.pointerId); } catch { /* noop */ }
+
+      if (this.rightDown && e.pointerId === this.rightPointerId) {
+        const moved = this.rightMoved;
+        this.rightDown = false;
+        this.rightPointerId = null;
+        this.rightMoved = 0;
+        this.onRightUp?.({ ...this._pointerPayload(e, moved), cancelled: e.type === 'pointercancel' });
+        return;
+      }
+
+      if (this.arrowDragging && e.pointerId === this.arrowPointerId) {
+        const moved = this.arrowMoved;
+        this.arrowDragging = false;
+        this.arrowPointerId = null;
+        this.arrowMoved = 0;
+        this.pointers.delete(e.pointerId);
+        if (this.pointers.size < 2) this.pinchD = 0;
+        this.onArrowDragEnd?.({ ...this._pointerPayload(e, moved), cancelled: e.type === 'pointercancel' });
+        return;
+      }
+
+      const wasTap = e.type !== 'pointercancel' && this.pointers.size === 1 && this.dragging && this.moved < 8;
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) this.pinchD = 0;
       if (this.pointers.size === 0) this.dragging = false;
-      if (wasTap && this.onTap) this.onTap(e.clientX, e.clientY);
+      if (wasTap) {
+        this.onLeftTap?.(e.clientX, e.clientY, e);
+        this.onTap?.(e.clientX, e.clientY, e);
+      }
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);

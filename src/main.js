@@ -5,14 +5,18 @@
 
 import * as THREE from 'three';
 import { Chess } from 'chess.js';
-import { squareToRC, rcToSquare, evaluateBoard } from './core/chess-engine.js';
+import { squareToRC, rcToSquare } from './core/chess-engine.js';
+import {
+  reconstructStateAtPly, formatEvalDisplay, cpToWinProb,
+  summarizeAnalysis, isPseudoLegalPremove, isPawnPromotionMove
+} from './core/game-helpers.js';
 import { AudioManager } from './core/audio.js';
 import { formatClock } from './core/elo.js';
 import { BOARD_THEMES, PIECE_THEMES } from './engine/themes.js';
 import { applyQualityTier } from './engine/quality.js';
 import { createScene } from './engine/scene.js';
-import { createBoard, getBoardTexture, worldPos } from './engine/board3d.js';
-import { createChessGeometries, makeChessPiece, animatePieceMove } from './engine/pieces3d.js';
+import { createBoard, applyBoardMaterialTextures } from './engine/board3d.js';
+import { createChessGeometries, makeChessPiece, applyPieceTheme as applyPieceTheme3D, animatePieceMove } from './engine/pieces3d.js';
 import { FXManager } from './engine/fx.js';
 import { CameraController } from './engine/camera.js';
 import { OnlineManager, isFirebaseConfigured } from './online/firebase.js';
@@ -25,23 +29,26 @@ const prefs = loadPrefs();
 
 /* ============ ESTADO ============ */
 const chess = new Chess();
-let mode = 'pve';           /* 'pve' | 'pvp' | 'online' */
+let mode = 'pve';
 let aiDepth = prefs.aiDepth ?? 2;
 let playerSide = 'w';
 let myColor = 'w';
-let localTimeLimit = 0;     /* ms (0 = livre) */
+let localTimeLimit = 0;
 let onlineTc = { base: 180000, inc: 2000, label: '3+2' };
 let clockW = null, clockB = null;
 let lastTickSec = -1;
 let gameActive = false;
 let busy = false;
-let selectedSq = null;      /* 'e2' */
-let legalFromSelected = []; /* verbose moves */
+let selectedSq = null;
+let legalFromSelected = [];
+let premove = null;           /* { from, to, promotion } */
+let reviewPly = null;         /* null = ao vivo, 0..N = inspecionando lance */
+let plyAnalyses = [];         /* [{ classification, evalCp, mateIn, cpLoss }] */
 let boardThemeIdx = prefs.boardTheme ?? 0;
 let pieceThemeIdx = prefs.pieceTheme ?? 0;
 let evalVisible = !!prefs.evalVisible;
 let nick = prefs.nick || 'JOGADOR';
-let pendingPromo = null;    /* { from, to, resolve } */
+let pendingPromo = null;
 let grid = Array.from({ length: 8 }, () => Array(8).fill(null));
 let pieceMeshes = [];
 let capturedMeshes = [];
@@ -65,10 +72,12 @@ function savePrefs() {
 const canvas = $('#c3d');
 const { scene, camera, renderer, materials, lights, qualityTier: initTier, resize } = createScene(canvas);
 let qualityTier = initTier;
-const { squares } = createBoard(scene, materials);
-const geos = createChessGeometries(qualityTier);
+const boardCtx = createBoard(scene, materials, qualityTier);
+const { squares } = boardCtx;
+let geos = createChessGeometries(qualityTier);
 const fx = new FXManager(scene);
 fx.setQuality(qualityTier);
+fx.setHintAssets(geos, PIECE_THEMES[pieceThemeIdx]);
 const cam = new CameraController(canvas, camera);
 const audio = new AudioManager();
 audio.muted = !!prefs.muted;
@@ -78,16 +87,23 @@ $('#btnSound').textContent = audio.muted ? '🔇' : '🔊';
 const aiWorker = new Worker(new URL('./workers/ai.worker.js', import.meta.url), { type: 'module' });
 let workerReqId = 0;
 const workerWaiters = new Map();
+let activeAnalysisCallback = null;
+
 aiWorker.onmessage = e => {
-  const { id, ...rest } = e.data;
+  const { id, type, ...rest } = e.data;
+  if (type === 'analysisProgress') {
+    activeAnalysisCallback?.(rest);
+    return;
+  }
   const resolve = workerWaiters.get(id);
   if (resolve) { workerWaiters.delete(id); resolve(rest); }
 };
-function askWorker(type, fen, depth = 2) {
+
+function askWorker(type, payload, extra = {}) {
   return new Promise(resolve => {
     const id = ++workerReqId;
     workerWaiters.set(id, resolve);
-    aiWorker.postMessage({ id, type, fen, depth });
+    aiWorker.postMessage({ id, type, ...payload, ...extra });
   });
 }
 
@@ -96,17 +112,18 @@ const online = new OnlineManager();
 let onlineInitPromise = null;
 
 function canUseHint() {
-  if (!gameActive) return false;
+  if (!gameActive || reviewPly !== null) return false;
   if (mode !== 'online') return true;
   return online.isVipDev();
 }
 
 function canShowEval() {
+  if (plyAnalyses.length > 0 && reviewPly !== null) return true;
   if (mode === 'online') return evalVisible && online.isVipDev();
   return evalVisible;
 }
 
-/* ============ TOAST ============ */
+/* ============ TOAST & BANNER ============ */
 let toastTimer = null;
 function toast(msg, ms = 2600) {
   const el = $('#toast');
@@ -116,21 +133,16 @@ function toast(msg, ms = 2600) {
   toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
+function hideHint() {
+  fx.clearHint();
+  $('#hintBanner').style.display = 'none';
+}
+
 /* ============ TEMAS ============ */
 function applyBoardTheme(i) {
   boardThemeIdx = i;
   const t = BOARD_THEMES[i] || BOARD_THEMES[0];
-  const tex = getBoardTexture(t.tex);
-  materials.lightSq.color.set(t.light);
-  materials.darkSq.color.set(t.dark);
-  materials.frame.color.set(t.frame);
-  materials.table.color.set(t.table);
-  materials.lightSq.map = tex;
-  materials.darkSq.map = tex;
-  materials.frame.map = tex;
-  materials.lightSq.needsUpdate = true;
-  materials.darkSq.needsUpdate = true;
-  materials.frame.needsUpdate = true;
+  applyBoardMaterialTextures(materials, t, qualityTier);
   scene.background = new THREE.Color(t.bg);
   document.querySelectorAll('#boardSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
   savePrefs();
@@ -138,7 +150,9 @@ function applyBoardTheme(i) {
 
 function applyPieceTheme(i) {
   pieceThemeIdx = i;
-  rebuildBoardPieces();
+  const th = PIECE_THEMES[i] || PIECE_THEMES[0];
+  applyPieceTheme3D(th, qualityTier, { pieceMeshes, capturedMeshes, geos });
+  fx.setHintAssets(geos, th);
   document.querySelectorAll('#pieceSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
   savePrefs();
 }
@@ -177,7 +191,7 @@ function addCapturedToken(type, color) {
   capturedMeshes.push(tok.mesh);
 }
 
-function rebuildBoardPieces() {
+function rebuildBoardPieces(boardMatrix = chess.board()) {
   const prevCaptured = [...capturedMeshes];
   for (const p of pieceMeshes) {
     scene.remove(p.mesh);
@@ -187,10 +201,9 @@ function rebuildBoardPieces() {
   grid = Array.from({ length: 8 }, () => Array(8).fill(null));
 
   const th = PIECE_THEMES[pieceThemeIdx];
-  const b = chess.board();
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
-      const cell = b[r][c];
+      const cell = boardMatrix[r][c];
       if (!cell) continue;
       const p = makeChessPiece(scene, geos, cell.type, cell.color, r, c, th, qualityTier);
       grid[r][c] = p;
@@ -201,17 +214,21 @@ function rebuildBoardPieces() {
 }
 
 /* ============ UI UPDATES ============ */
-function updateTurnUI() {
-  const turn = chess.turn();
+function updateTurnUI(viewChess = chess) {
+  const turn = viewChess.turn();
+  const isReview = reviewPly !== null;
   $('#turnDot').classList.toggle('black', turn === 'b');
-  $('#turnTxt').textContent = turn === 'w' ? 'VEZ DAS BRANCAS' : 'VEZ DAS PRETAS';
-  $('#turnSub').style.display = chess.inCheck() ? 'inline' : 'none';
-  $('#turnSub').textContent = chess.inCheck() ? '· XEQUE!' : '';
-  $('#cardW').classList.toggle('active', gameActive && turn === 'w');
-  $('#cardB').classList.toggle('active', gameActive && turn === 'b');
+  $('#turnTxt').textContent = isReview
+    ? `REVISÃO · LANCE ${reviewPly}/${chess.history().length}`
+    : (turn === 'w' ? 'VEZ DAS BRANCAS' : 'VEZ DAS PRETAS');
+  $('#turnSub').style.display = viewChess.inCheck() ? 'inline' : 'none';
+  $('#turnSub').textContent = viewChess.inCheck() ? '· XEQUE!' : '';
+  $('#cardW').classList.toggle('active', gameActive && !isReview && turn === 'w');
+  $('#cardB').classList.toggle('active', gameActive && !isReview && turn === 'b');
+  $('#reviewBadge').style.display = isReview ? 'inline-block' : 'none';
 
-  if (chess.inCheck()) {
-    const b = chess.board();
+  if (viewChess.inCheck()) {
+    const b = viewChess.board();
     for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
       if (b[r][c]?.type === 'k' && b[r][c]?.color === turn) fx.setCheckSquare(r, c);
     }
@@ -220,7 +237,7 @@ function updateTurnUI() {
   }
 
   $('#btnHint').style.display = canUseHint() ? 'flex' : 'none';
-  $('#btnUndo').style.display = (gameActive && mode !== 'online' && chess.history().length > 0) ? 'flex' : 'none';
+  $('#btnUndo').style.display = (gameActive && !isReview && mode !== 'online' && chess.history().length > 0) ? 'flex' : 'none';
   $('#btnDraw').style.display = (gameActive && mode === 'online') ? 'flex' : 'none';
   $('#btnResign').style.display = (gameActive && mode !== 'pvp') ? 'flex' : 'none';
 }
@@ -236,33 +253,114 @@ function updateClocksUI() {
   $('#clockB').classList.toggle('low', clockB <= 15000);
 }
 
+const CLS_BADGE = {
+  brilliant: { sym: '!!', cls: 'cls-brilliant' },
+  great:     { sym: '!',  cls: 'cls-great' },
+  best:      { sym: '★',  cls: 'cls-best' },
+  inaccuracy:{ sym: '?!', cls: 'cls-inaccuracy' },
+  mistake:   { sym: '?',  cls: 'cls-mistake' },
+  blunder:   { sym: '??', cls: 'cls-blunder' }
+};
+
 function renderHistory() {
   const list = $('#histList');
   const hist = chess.history();
+  const activePly = reviewPly !== null ? reviewPly : hist.length;
   list.innerHTML = '';
+
   for (let i = 0; i < hist.length; i += 2) {
     const row = document.createElement('div');
     row.className = 'hist-row';
-    row.innerHTML = `<span class="hist-num">${i / 2 + 1}.</span><span>${hist[i]}</span><span>${hist[i + 1] || ''}</span>`;
+    const num = document.createElement('span');
+    num.className = 'hist-num';
+    num.textContent = `${i / 2 + 1}.`;
+    row.appendChild(num);
+
+    for (const offset of [0, 1]) {
+      const plyIdx = i + offset;
+      if (plyIdx >= hist.length) {
+        row.appendChild(document.createElement('span'));
+        continue;
+      }
+      const plyNum = plyIdx + 1;
+      const btn = document.createElement('button');
+      btn.className = 'hist-move' + (activePly === plyNum ? ' active' : '');
+      btn.dataset.ply = String(plyNum);
+      const badge = plyAnalyses[plyIdx]?.classification ? CLS_BADGE[plyAnalyses[plyIdx].classification] : null;
+      btn.innerHTML = `<span>${hist[plyIdx]}</span>` + (badge ? `<span class="hist-cls ${badge.cls}">${badge.sym}</span>` : '');
+      btn.onclick = () => goToPly(plyNum);
+      row.appendChild(btn);
+    }
     list.appendChild(row);
   }
   list.scrollTop = list.scrollHeight;
+
+  const total = hist.length;
+  $('#btnNavFirst').disabled = activePly <= 0;
+  $('#btnNavPrev').disabled = activePly <= 0;
+  $('#btnNavNext').disabled = activePly >= total;
+  $('#btnNavLast').disabled = activePly >= total;
 }
 
-async function refreshEval() {
+function goToPly(ply) {
+  const histVerbose = chess.history({ verbose: true });
+  const total = histVerbose.length;
+  const clamped = Math.max(0, Math.min(total, ply));
+  deselect();
+  hideHint();
+
+  if (clamped === total) {
+    reviewPly = null;
+    rebuildBoardPieces(chess.board());
+    if (total > 0) {
+      const last = histVerbose[total - 1];
+      const f = squareToRC(last.from), t = squareToRC(last.to);
+      fx.setLastMove(f.r, f.c, t.r, t.c);
+    } else {
+      fx.clearLastMove();
+    }
+    updateTurnUI(chess);
+    renderHistory();
+    refreshEval();
+    return;
+  }
+
+  reviewPly = clamped;
+  const stateAt = reconstructStateAtPly(histVerbose, clamped);
+  const viewChess = new Chess(stateAt.fen);
+  rebuildBoardPieces(viewChess.board());
+  if (stateAt.lastMove) {
+    const f = squareToRC(stateAt.lastMove.from), t = squareToRC(stateAt.lastMove.to);
+    fx.setLastMove(f.r, f.c, t.r, t.c);
+  } else {
+    fx.clearLastMove();
+  }
+  updateTurnUI(viewChess);
+  renderHistory();
+  refreshEval(viewChess.fen(), clamped);
+}
+
+async function refreshEval(fen = chess.fen(), plyForAnalysis = null) {
   const show = canShowEval();
   $('#evalWrap').style.display = show ? 'flex' : 'none';
   if (!show) return;
-  const res = await askWorker('evaluate', chess.fen());
+
+  if (plyForAnalysis !== null && plyForAnalysis > 0 && plyAnalyses[plyForAnalysis - 1]) {
+    const a = plyAnalyses[plyForAnalysis - 1];
+    const wp = cpToWinProb(a.evalCp, a.mateIn);
+    $('#evalFill').style.height = `${Math.max(5, Math.min(95, wp * 100))}%`;
+    $('#evalNum').textContent = formatEvalDisplay(a.evalCp, a.mateIn);
+    return;
+  }
+
+  const res = await askWorker('evaluate', { fen }, { depth: 1, quiesce: true });
   if (!res.ok) return;
-  const cp = res.cp;
-  const pct = Math.max(5, Math.min(95, 50 + (cp / 800) * 45));
-  $('#evalFill').style.height = `${pct}%`;
-  const pawns = (cp / 100).toFixed(1);
-  $('#evalNum').textContent = cp >= 0 ? `+${pawns}` : pawns;
+  const wp = cpToWinProb(res.cp ?? res.evalCp ?? 0, res.mateIn ?? null);
+  $('#evalFill').style.height = `${Math.max(5, Math.min(95, wp * 100))}%`;
+  $('#evalNum').textContent = formatEvalDisplay(res.cp ?? res.evalCp ?? 0, res.mateIn ?? null);
 }
 
-/* ============ SELEÇÃO & EXECUÇÃO DE LANCE ============ */
+/* ============ SELEÇÃO, PREMOVE & EXECUÇÃO ============ */
 function deselect() {
   if (selectedSq) {
     const { r, c } = squareToRC(selectedSq);
@@ -278,16 +376,42 @@ function deselect() {
   fx.clearIndicators();
 }
 
+function clearPremove() {
+  premove = null;
+  fx.clearPremove();
+}
+
 function selectSquare(sq) {
   const { r, c } = squareToRC(sq);
   const p = grid[r][c];
-  if (!p || p.color !== chess.turn()) return;
-  deselect();
-  const moves = chess.moves({ square: sq, verbose: true });
-  if (moves.length === 0) {
-    audio.error();
+  if (!p) return;
+
+  /* Premove no modo online durante o turno do oponente */
+  if (mode === 'online' && chess.turn() !== myColor) {
+    if (p.color !== myColor) return;
+    deselect();
+    selectedSq = sq;
+    p.mesh.position.y = 0.14;
+    p.mesh.material.emissive.set(0x3B82F6);
+    p.mesh.material.emissiveIntensity = 0.38;
+    const b = chess.board();
+    for (let tr = 0; tr < 8; tr++) {
+      for (let tc = 0; tc < 8; tc++) {
+        const target = rcToSquare(tr, tc);
+        if (isPseudoLegalPremove(b, myColor, sq, target)) {
+          fx.addMoveDot(tr, tc, Boolean(b[tr][tc]));
+        }
+      }
+    }
+    audio.select();
     return;
   }
+
+  if (p.color !== chess.turn()) return;
+  deselect();
+  const moves = chess.moves({ square: sq, verbose: true });
+  if (moves.length === 0) { audio.error(); return; }
+
   selectedSq = sq;
   legalFromSelected = moves;
   p.mesh.position.y = 0.14;
@@ -318,6 +442,9 @@ async function executeMove(moveInput, isRemote = false) {
   if (busy) return false;
   busy = true;
   deselect();
+  hideHint();
+  fx.clearManualAnnotations();
+  if (reviewPly !== null) goToPly(chess.history().length);
 
   const moverColor = chess.turn();
   const move = chess.move(moveInput);
@@ -327,7 +454,6 @@ async function executeMove(moveInput, isRemote = false) {
   const toRC = squareToRC(move.to);
   const piece = grid[fromRC.r][fromRC.c];
 
-  /* Captura normal ou en passant */
   if (move.captured) {
     const capR = move.flags.includes('e') ? fromRC.r : toRC.r;
     const capC = toRC.c;
@@ -346,7 +472,6 @@ async function executeMove(moveInput, isRemote = false) {
   grid[toRC.r][toRC.c] = piece;
   await animatePieceMove(piece, toRC.r, toRC.c, move.piece === 'n');
 
-  /* Roque: move a torre também */
   if (move.flags.includes('k') || move.flags.includes('q')) {
     const rookFromC = move.flags.includes('k') ? 7 : 0;
     const rookToC = move.flags.includes('k') ? 5 : 3;
@@ -363,7 +488,6 @@ async function executeMove(moveInput, isRemote = false) {
     audio.move();
   }
 
-  /* Promoção: troca geometria para Dama/Torre/Bispo/Cavalo */
   if (move.promotion) {
     piece.type = move.promotion;
     piece.mesh.geometry = geos[move.promotion];
@@ -389,8 +513,22 @@ async function executeMove(moveInput, isRemote = false) {
   busy = false;
 
   if (chess.isGameOver()) {
+    clearPremove();
     endGameFromBoard();
     return true;
+  }
+
+  /* Executa Premove se for minha vez no online */
+  if (mode === 'online' && isRemote && chess.turn() === myColor && premove) {
+    const pm = premove;
+    clearPremove();
+    const legal = chess.moves({ verbose: true }).find(
+      m => m.from === pm.from && m.to === pm.to && (!m.promotion || m.promotion === (pm.promotion || 'q'))
+    );
+    if (legal) {
+      await executeMove({ from: legal.from, to: legal.to, promotion: legal.promotion });
+      return true;
+    }
   }
 
   if (mode === 'pvp') {
@@ -404,13 +542,15 @@ async function executeMove(moveInput, isRemote = false) {
 async function runAIMove() {
   if (!gameActive || chess.isGameOver()) return;
   $('#turnTxt').textContent = 'MÁQUINA PENSANDO…';
-  const res = await askWorker('bestMove', chess.fen(), aiDepth);
+  const res = await askWorker('bestMove', { fen: chess.fen(), depth: aiDepth });
   if (!gameActive || !res.ok || !res.move) return;
   await executeMove(res.move);
 }
 
 function endGameFromBoard(customWinner = null, customReason = '') {
   gameActive = false;
+  clearPremove();
+  hideHint();
   let winner = customWinner;
   let reason = customReason;
 
@@ -437,6 +577,7 @@ function endGameFromBoard(customWinner = null, customReason = '') {
   $('#overTitle').textContent = winner === 'draw' ? 'Empate' : (winner === 'w' ? 'Brancas Vencem' : 'Pretas Vencem');
   $('#overSub').textContent = reason;
   $('#overDelta').style.display = 'none';
+  $('#btnAnalyze').style.display = chess.history().length > 0 ? 'block' : 'none';
   $('#overOverlay').classList.remove('hide');
 
   if (mode === 'online' && !customWinner) {
@@ -444,15 +585,66 @@ function endGameFromBoard(customWinner = null, customReason = '') {
   }
 }
 
+/* ============ SETAS TÁTICAS & ANOTAÇÕES ============ */
+let dragOriginSq = null;
+function annotationColor(payload) {
+  if (payload?.shiftKey) return 'red';
+  if (payload?.altKey) return 'blue';
+  if (payload?.ctrlKey || payload?.metaKey) return 'yellow';
+  return 'green';
+}
+
+function handleAnnotateStart(payload) {
+  const hit = cam.screenToSquare(payload.clientX, payload.clientY);
+  dragOriginSq = hit ? { r: hit.r, c: hit.c } : null;
+}
+
+function handleAnnotateMove(payload) {
+  if (!dragOriginSq) return;
+  const hit = cam.screenToSquare(payload.clientX, payload.clientY);
+  if (hit && (hit.r !== dragOriginSq.r || hit.c !== dragOriginSq.c)) {
+    fx.setManualPreviewArrow(dragOriginSq.r, dragOriginSq.c, hit.r, hit.c, annotationColor(payload));
+  } else {
+    fx.clearManualPreviewArrow();
+  }
+}
+
+function handleAnnotateEnd(payload) {
+  fx.clearManualPreviewArrow();
+  if (!dragOriginSq || payload.cancelled) { dragOriginSq = null; return; }
+  const hit = cam.screenToSquare(payload.clientX, payload.clientY);
+  if (hit) {
+    const color = annotationColor(payload);
+    if (hit.r === dragOriginSq.r && hit.c === dragOriginSq.c) {
+      fx.toggleManualMark(hit.r, hit.c, color);
+    } else {
+      fx.toggleManualArrow(dragOriginSq.r, dragOriginSq.c, hit.r, hit.c, color);
+    }
+  }
+  dragOriginSq = null;
+}
+
+cam.onRightDown = p => {
+  if (premove) clearPremove();
+  handleAnnotateStart(p);
+};
+cam.onRightDrag = handleAnnotateMove;
+cam.onRightUp = handleAnnotateEnd;
+cam.onArrowDragStart = handleAnnotateStart;
+cam.onArrowDragMove = handleAnnotateMove;
+cam.onArrowDragEnd = handleAnnotateEnd;
+
 /* ============ INTERAÇÃO NO TABULEIRO (RAYCASTER) ============ */
 const ray = new THREE.Raycaster();
 const ptr = new THREE.Vector2();
 
 cam.onTap = async (cx, cy) => {
-  if (!gameActive || busy) return;
+  if (cam.arrowMode) return;
+  fx.clearManualAnnotations();
+  if (!gameActive || busy || reviewPly !== null) return;
   if (mode === 'pve' && chess.turn() !== playerSide) return;
-  if (mode === 'online' && chess.turn() !== myColor) return;
 
+  const isOnlinePremoveTurn = mode === 'online' && chess.turn() !== myColor;
   const rect = canvas.getBoundingClientRect();
   ptr.x = ((cx - rect.left) / rect.width) * 2 - 1;
   ptr.y = -((cy - rect.top) / rect.height) * 2 + 1;
@@ -469,7 +661,34 @@ cam.onTap = async (cx, cy) => {
     const { r, c } = sqHits[0].object.userData;
     hitSq = rcToSquare(r, c);
   }
-  if (!hitSq) { deselect(); return; }
+  if (!hitSq) { deselect(); if (isOnlinePremoveTurn) clearPremove(); return; }
+
+  if (isOnlinePremoveTurn) {
+    if (selectedSq && selectedSq !== hitSq) {
+      const b = chess.board();
+      if (isPseudoLegalPremove(b, myColor, selectedSq, hitSq)) {
+        const f = squareToRC(selectedSq), t = squareToRC(hitSq);
+        const piece = grid[f.r][f.c];
+        premove = {
+          from: selectedSq,
+          to: hitSq,
+          promotion: isPawnPromotionMove(piece?.type, myColor, hitSq) ? 'q' : undefined
+        };
+        fx.setPremove(f.r, f.c, t.r, t.c);
+        deselect();
+        toast('Pré-lance definido');
+        return;
+      }
+    }
+    const { r, c } = squareToRC(hitSq);
+    if (grid[r][c]?.color === myColor) {
+      selectSquare(hitSq);
+    } else {
+      deselect();
+      clearPremove();
+    }
+    return;
+  }
 
   if (selectedSq) {
     const matching = legalFromSelected.filter(m => m.to === hitSq);
@@ -495,7 +714,7 @@ cam.onTap = async (cx, cy) => {
 let hoveredPiece = null;
 if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
   canvas.addEventListener('pointermove', e => {
-    if (!gameActive || busy || cam.dragging || qualityTier === 'low') {
+    if (!gameActive || busy || cam.dragging || cam.arrowMode || reviewPly !== null || qualityTier === 'low') {
       if (hoveredPiece) {
         const sq = rcToSquare(hoveredPiece.r, hoveredPiece.c);
         if (sq !== selectedSq) hoveredPiece.mesh.position.y = 0;
@@ -507,7 +726,8 @@ if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
     ptr.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ptr.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     ray.setFromCamera(ptr, camera);
-    const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === chess.turn()).map(p => p.mesh), false);
+    const activeColor = mode === 'online' ? myColor : chess.turn();
+    const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === activeColor).map(p => p.mesh), false);
     const next = hits.length ? hits[0].object.userData.piece : null;
     if (hoveredPiece && hoveredPiece !== next && rcToSquare(hoveredPiece.r, hoveredPiece.c) !== selectedSq) {
       hoveredPiece.mesh.position.y = 0;
@@ -524,13 +744,16 @@ if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
 function startMatch(newMode, opts = {}) {
   mode = newMode;
   chess.reset();
+  reviewPly = null;
+  plyAnalyses = [];
+  clearPremove();
+  hideHint();
+  fx.clearAll();
+  $('#analysisSummary').style.display = 'none';
   clearAllPieces();
   capturedSymbols = { w: '', b: '' };
   $('#capsW').textContent = '';
   $('#capsB').textContent = '';
-  fx.clearIndicators();
-  fx.clearLastMove();
-  fx.clearCheckSquare();
   rebuildBoardPieces();
   renderHistory();
 
@@ -562,6 +785,46 @@ function startMatch(newMode, opts = {}) {
 
   if (mode === 'pve' && playerSide === 'b') {
     runAIMove();
+  }
+}
+
+/* ============ ANÁLISE PÓS-PARTIDA ============ */
+async function runPostGameAnalysis() {
+  const histVerbose = chess.history({ verbose: true });
+  if (!histVerbose.length) return;
+  $('#overOverlay').classList.add('hide');
+  $('#historyBox').classList.add('open');
+  $('#analysisSummary').style.display = 'block';
+  $('#analysisSummary').textContent = 'Analisando partida…';
+
+  const fens = [new Chess().fen()];
+  const tmp = new Chess();
+  const moves = [];
+  for (const m of histVerbose) {
+    tmp.move(m);
+    fens.push(tmp.fen());
+    moves.push({ from: m.from, to: m.to, promotion: m.promotion, san: m.san });
+  }
+
+  plyAnalyses = new Array(moves.length);
+  activeAnalysisCallback = prog => {
+    if (prog.plyIndex !== undefined && prog.entry) {
+      plyAnalyses[prog.plyIndex] = prog.entry;
+      renderHistory();
+    }
+    $('#analysisSummary').textContent = `Analisando lance ${prog.completed || 0}/${moves.length}…`;
+  };
+
+  const res = await askWorker('analyzeGame', { fens, moves, depth: 2 });
+  activeAnalysisCallback = null;
+  if (res.ok && res.plies) {
+    plyAnalyses = res.plies;
+    const sum = summarizeAnalysis(plyAnalyses);
+    $('#analysisSummary').innerHTML =
+      `Precisão: <strong>B ${sum.accuracyW}%</strong> · <strong>P ${sum.accuracyB}%</strong><br>` +
+      `★ ${sum.counts.best} · ?! ${sum.counts.inaccuracy} · ? ${sum.counts.mistake} · ?? ${sum.counts.blunder}`;
+    renderHistory();
+    goToPly(1);
   }
 }
 
@@ -599,6 +862,12 @@ bindSeg('#segEval', v => { evalVisible = v === '1'; savePrefs(); refreshEval(); 
 $('#btnStartLocal').onclick = () => startMatch(mode === 'pvp' ? 'pvp' : 'pve');
 $('#btnNewMenu').onclick = () => $('#menuOverlay').classList.remove('hide');
 $('#btnHome').onclick = () => $('#menuOverlay').classList.remove('hide');
+$('#btnArrowMode').onclick = () => {
+  const next = !cam.arrowMode;
+  cam.setArrowMode(next);
+  $('#btnArrowMode').classList.toggle('active', next);
+  toast(next ? 'Modo Setas: toque/arraste no tabuleiro' : 'Modo Jogo restaurado');
+};
 $('#btnView2D').onclick = async () => {
   const is2D = await cam.toggleTopDown();
   $('#btnView2D').classList.toggle('active', is2D);
@@ -611,18 +880,43 @@ $('#btnSound').onclick = () => {
 };
 $('#btnSettings').onclick = () => $('#settingsOverlay').classList.remove('hide');
 $('#btnCloseSettings').onclick = () => $('#settingsOverlay').classList.add('hide');
+$('#btnHistoryToggle').onclick = () => $('#historyBox').classList.toggle('open');
+
+$('#btnNavFirst').onclick = () => goToPly(0);
+$('#btnNavPrev').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) - 1);
+$('#btnNavNext').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) + 1);
+$('#btnNavLast').onclick = () => goToPly(chess.history().length);
 
 $('#btnHint').onclick = async () => {
   if (!canUseHint() || busy) return;
-  const res = await askWorker('bestMove', chess.fen(), 3);
+  const res = await askWorker('bestMove', { fen: chess.fen(), depth: 3 });
   if (!res.ok || !res.move) return;
   const f = squareToRC(res.move.from), t = squareToRC(res.move.to);
-  fx.setLastMove(f.r, f.c, t.r, t.c);
-  toast(`Sugestão: ${res.move.san}`);
+  const moving = chess.get(res.move.from);
+  const pv = res.move.pv || [res.move.san];
+  let replyOpts = {};
+  if (pv.length >= 2) {
+    const tmp = new Chess(chess.fen());
+    tmp.move({ from: res.move.from, to: res.move.to, promotion: res.move.promotion });
+    const rep = tmp.move(pv[1]);
+    if (rep) {
+      const rf = squareToRC(rep.from), rt = squareToRC(rep.to);
+      replyOpts = { replyFromR: rf.r, replyFromC: rf.c, replyToR: rt.r, replyToC: rt.c };
+    }
+  }
+  fx.setHint({
+    fromR: f.r, fromC: f.c, toR: t.r, toC: t.c,
+    pieceType: res.move.promotion || moving?.type || 'p',
+    color: moving?.color || chess.turn(),
+    ...replyOpts
+  });
+  $('#hintBanner').innerHTML = `<strong>Dica: ${res.move.san}</strong> · Linha: ${pv.slice(0, 4).join(' ')}`;
+  $('#hintBanner').style.display = 'block';
 };
 
 $('#btnUndo').onclick = () => {
   if (!gameActive || mode === 'online' || busy) return;
+  if (reviewPly !== null) goToPly(chess.history().length);
   chess.undo();
   if (mode === 'pve' && chess.turn() !== playerSide) chess.undo();
   rebuildBoardPieces();
@@ -646,6 +940,7 @@ $('#btnDraw').onclick = () => {
 $('#btnDrawYes').onclick = () => { $('#drawBar').style.display = 'none'; online.respondDraw(true); };
 $('#btnDrawNo').onclick = () => { $('#drawBar').style.display = 'none'; online.respondDraw(false); };
 
+$('#btnAnalyze').onclick = runPostGameAnalysis;
 $('#btnRematch').onclick = () => {
   if (mode === 'online') {
     $('#overOverlay').classList.add('hide');
@@ -805,7 +1100,6 @@ window.addEventListener('resize', () => {
   if (cam.radius < need) { cam.radius = need; cam.sync(); }
 });
 
-/* Auto-join por ?room=CODIGO */
 const roomParam = new URLSearchParams(location.search).get('room');
 if (roomParam) {
   document.querySelector('#segMode .seg[data-val="online"]')?.click();
@@ -824,7 +1118,6 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
   const dt = t - prevT;
   prevT = t;
 
-  /* Relógio da partida */
   if (gameActive && clockW !== null && clockB !== null) {
     const ms = dt * 1000;
     if (chess.turn() === 'w') clockW -= ms; else clockB -= ms;
@@ -839,7 +1132,6 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
     }
   }
 
-  /* Monitoramento de FPS para PC fraco / celular */
   if (!document.hidden && gameActive && dt > 0 && dt < 0.25 && qualityTier !== 'low') {
     fpsFrames++;
     fpsAccum += dt;
@@ -852,7 +1144,15 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
         if (lowFpsStrikes >= 2) {
           lowFpsStrikes = 0;
           qualityTier = qualityTier === 'high' ? 'medium' : 'low';
-          applyQualityTier(qualityTier, { renderer, lights, fx });
+          applyQualityTier(qualityTier, {
+            renderer,
+            lights,
+            fx,
+            materials,
+            boardTheme: BOARD_THEMES[boardThemeIdx],
+            board: boardCtx,
+            pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx] }
+          });
           toast(qualityTier === 'low' ? 'Modo desempenho ativado' : 'Qualidade ajustada para 60fps');
         }
       } else {

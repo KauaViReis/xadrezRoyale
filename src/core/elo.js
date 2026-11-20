@@ -16,7 +16,7 @@ export function eloDelta(myRating, oppRating, score, games = 0) {
 }
 
 export function formatClock(ms) {
-  if (ms === null || ms === undefined) return '--:--';
+  if (ms === null || ms === undefined || !Number.isFinite(ms)) return '--:--';
   const s = Math.max(0, Math.ceil(ms / 1000));
   const m = Math.floor(s / 60);
   const sec = s % 60;

@@ -8,21 +8,29 @@ export const easeOutBack = t => {
 };
 
 export function tween(ms, onStep) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    onStep(1);
+    return Promise.resolve();
+  }
+  const raf = typeof requestAnimationFrame === 'function'
+    ? requestAnimationFrame
+    : cb => setTimeout(() => cb(performance.now()), 16);
   return new Promise(resolve => {
     const t0 = performance.now();
     function frame(now) {
       const k = Math.min(1, (now - t0) / ms);
       onStep(k);
-      if (k < 1) requestAnimationFrame(frame);
+      if (k < 1) raf(frame);
       else resolve();
     }
-    requestAnimationFrame(frame);
+    raf(frame);
   });
 }
 
 let hapticsEnabled = true;
 export function setHaptics(on) { hapticsEnabled = !!on; }
+export function getHaptics() { return hapticsEnabled; }
 export function vibrate(pattern) {
-  if (!hapticsEnabled || !navigator.vibrate) return;
+  if (!hapticsEnabled || typeof navigator === 'undefined' || typeof navigator.vibrate !== 'function') return;
   try { navigator.vibrate(pattern); } catch { /* noop */ }
 }

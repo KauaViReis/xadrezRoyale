@@ -7,7 +7,9 @@ export const BOARD_THEMES = [
     frame: 0x2F1C11,
     table: 0x1A120C,
     bg: 0x0E0D0B,
-    tex: 'wood'
+    tex: 'wood',
+    fillet: 0xC99A3E,
+    coord: 0xE6D3B3
   },
   {
     id: 'marble',
@@ -17,7 +19,9 @@ export const BOARD_THEMES = [
     frame: 0x22262B,
     table: 0x14171A,
     bg: 0x0C0E10,
-    tex: 'marble'
+    tex: 'marble',
+    fillet: 0xB8C2CC,
+    coord: 0xDCE2E8
   },
   {
     id: 'slate',
@@ -27,7 +31,9 @@ export const BOARD_THEMES = [
     frame: 0x1E2922,
     table: 0x121814,
     bg: 0x0B0E0C,
-    tex: 'slate'
+    tex: 'slate',
+    fillet: 0xC4A767,
+    coord: 0xCBD5C0
   },
   {
     id: 'contrast',
@@ -37,13 +43,15 @@ export const BOARD_THEMES = [
     frame: 0x090909,
     table: 0x121212,
     bg: 0x080808,
-    tex: 'none'
+    tex: 'none',
+    fillet: 0x8A8E94,
+    coord: 0xF5F5F5
   }
 ];
 
 export const PIECE_THEMES = [
-  { id: 'boxwood', name: 'BUXO & ÉBANO', w: 0xF3E8D2, b: 0x25211E, metal: false },
-  { id: 'ivory', name: 'MARFIM & ÔNIX', w: 0xFAF6EE, b: 0x18191C, metal: false },
-  { id: 'brass', name: 'LATÃO & AÇO', w: 0xD7B265, b: 0x6B747E, metal: true },
-  { id: 'accessible', name: 'DALTÔNICO (OURO×AZUL)', w: 0xF2C94C, b: 0x2F80ED, metal: false }
+  { id: 'boxwood', name: 'BUXO & ÉBANO', w: 0xF3E8D2, b: 0x25211E, metal: false, tex: 'wood' },
+  { id: 'ivory', name: 'MARFIM & ÔNIX', w: 0xFAF6EE, b: 0x18191C, metal: false, tex: 'ivory' },
+  { id: 'brass', name: 'LATÃO & AÇO', w: 0xD7B265, b: 0x6B747E, metal: true, tex: 'metal' },
+  { id: 'accessible', name: 'DALTÔNICO (OURO×AZUL)', w: 0xF2C94C, b: 0x2F80ED, metal: false, tex: 'matte' }
 ];
