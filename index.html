@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>XADREZ ROYALE — Xadrez 3D Online</title>
+  <meta name="description" content="Xadrez Royale: jogo de xadrez 3D com regras oficiais FIDE, IA em Web Worker, rating Elo, modos Bullet/Blitz/Rápida e visual editorial.">
+  <meta name="theme-color" content="#0E0D0B">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/styles/main.css">
+</head>
+<body>
+  <canvas id="c3d"></canvas>
+
+  <!-- TOPO -->
+  <header class="hud-top">
+    <div class="brand-chip panel-glass" id="btnHome" title="Menu">
+      <span class="brand-mark">♔</span>
+      <span class="brand-name">XADREZ ROYALE</span>
+    </div>
+
+    <div class="turn-pill panel-glass" id="turnPill">
+      <span class="turn-dot" id="turnDot"></span>
+      <span id="turnTxt">VEZ DAS BRANCAS</span>
+      <span class="turn-sub" id="turnSub" style="display:none"></span>
+    </div>
+
+    <div class="hud-right">
+      <button class="icon-btn panel-glass" id="btnView2D" title="Alternar Vista 3D / 2D">2D</button>
+      <button class="icon-btn panel-glass" id="btnFlip" title="Girar Tabuleiro">⇅</button>
+      <button class="icon-btn panel-glass" id="btnSound" title="Som">🔊</button>
+      <button class="icon-btn panel-glass" id="btnSettings" title="Aparência">⚙</button>
+    </div>
+  </header>
+
+  <!-- JOGADORES & RELÓGIOS -->
+  <section class="players-bar">
+    <div class="player-card panel-glass" id="cardW">
+      <div class="p-color white"></div>
+      <div class="p-meta">
+        <span class="p-name" id="nameW">BRANCAS</span>
+        <span class="p-caps" id="capsW"></span>
+      </div>
+      <div class="p-clock" id="clockW" style="display:none">05:00</div>
+    </div>
+
+    <div class="player-card panel-glass" id="cardB">
+      <div class="p-color black"></div>
+      <div class="p-meta">
+        <span class="p-name" id="nameB">PRETAS</span>
+        <span class="p-caps" id="capsB"></span>
+      </div>
+      <div class="p-clock" id="clockB" style="display:none">05:00</div>
+    </div>
+  </section>
+
+  <!-- BARRA DE AVALIAÇÃO (LOCAL / VIP) -->
+  <aside class="eval-wrap panel-glass" id="evalWrap" style="display:none" title="Avaliação da Posição">
+    <div class="eval-track">
+      <div class="eval-fill" id="evalFill" style="height:50%"></div>
+    </div>
+    <span class="eval-num" id="evalNum">0.0</span>
+  </aside>
+
+  <!-- HISTÓRICO SAN LATERAL (DESKTOP) -->
+  <aside class="history-box panel-glass" id="historyBox">
+    <div class="hist-head">LANCES</div>
+    <div class="hist-list" id="histList"></div>
+  </aside>
+
+  <!-- AÇÕES INFERIORES -->
+  <footer class="hud-actions">
+    <button class="act-btn panel-glass" id="btnHint" style="display:none">💡 <span>DICA</span></button>
+    <button class="act-btn panel-glass" id="btnUndo" style="display:none">↩ <span>DESFAZER</span></button>
+    <button class="act-btn panel-glass" id="btnDraw" style="display:none">🤝 <span>EMPATE</span></button>
+    <button class="act-btn panel-glass warn" id="btnResign" style="display:none">🏳 <span>DESISTIR</span></button>
+    <button class="act-btn panel-glass" id="btnNewMenu">☰ <span>MENU</span></button>
+  </footer>
+
+  <!-- BARRA DE EMPATE OFERECIDO -->
+  <div class="draw-bar panel-glass" id="drawBar" style="display:none">
+    <span>Oponente propôs empate</span>
+    <button class="mini-btn prim" id="btnDrawYes">Aceitar</button>
+    <button class="mini-btn" id="btnDrawNo">Recusar</button>
+  </div>
+
+  <!-- TOAST -->
+  <div class="toast panel-glass" id="toast"></div>
+
+  <!-- MODAL DE PROMOÇÃO DE PEÃO -->
+  <div class="overlay hide" id="promoModal">
+    <div class="modal panel-glass promo-card">
+      <div class="modal-eyebrow">PROMOÇÃO</div>
+      <h2 class="modal-title">Escolha a Peça</h2>
+      <div class="promo-grid">
+        <button class="promo-btn" data-piece="q"><span>♕</span><small>Dama</small></button>
+        <button class="promo-btn" data-piece="r"><span>♖</span><small>Torre</small></button>
+        <button class="promo-btn" data-piece="b"><span>♗</span><small>Bispo</small></button>
+        <button class="promo-btn" data-piece="n"><span>♘</span><small>Cavalo</small></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MENU PRINCIPAL -->
+  <div class="overlay" id="menuOverlay">
+    <div class="modal panel-glass menu-card">
+      <div class="menu-header">
+        <div class="modal-eyebrow">CLUBE EDITORIAL 3D · REGRAS FIDE</div>
+        <h1 class="hero-title">Xadrez Royale</h1>
+        <p class="hero-sub">Partidas 3D de baixa latência para PC e celular, com IA em thread separada e modo online.</p>
+      </div>
+
+      <div class="seg-group" id="segMode">
+        <button class="seg active" data-val="pve">Contra Máquina</button>
+        <button class="seg" data-val="pvp">2 Jogadores</button>
+        <button class="seg" data-val="online">Online</button>
+      </div>
+
+      <!-- OPÇÕES LOCAIS / IA -->
+      <div id="localOpts">
+        <div class="field-row" id="diffRow">
+          <label>Nível da IA</label>
+          <div class="seg-group compact" id="segDiff">
+            <button class="seg" data-val="1">Casual</button>
+            <button class="seg active" data-val="2">Clube</button>
+            <button class="seg" data-val="3">Mestre</button>
+          </div>
+        </div>
+
+        <div class="field-row" id="sideRow">
+          <label>Jogar de</label>
+          <div class="seg-group compact" id="segSide">
+            <button class="seg active" data-val="w">Brancas</button>
+            <button class="seg" data-val="b">Pretas</button>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label>Relógio</label>
+          <div class="seg-group compact" id="segTcLocal">
+            <button class="seg active" data-val="0">Livre</button>
+            <button class="seg" data-val="180000">3 min</button>
+            <button class="seg" data-val="300000">5 min</button>
+            <button class="seg" data-val="600000">10 min</button>
+          </div>
+        </div>
+
+        <button class="btn prim full" id="btnStartLocal">INICIAR PARTIDA</button>
+      </div>
+
+      <!-- OPÇÕES ONLINE -->
+      <div id="onlineOpts" style="display:none">
+        <div class="online-profile panel-glass-inner">
+          <div>
+            <input type="text" id="nickInput" class="txt-input" maxlength="16" placeholder="SEU APELIDO">
+            <div class="rating-line" id="ratingLine">Rating: 1200</div>
+          </div>
+          <button class="btn-google" id="btnGoogle">Conectar Google</button>
+        </div>
+
+        <div class="field-row">
+          <label>Controle de Tempo</label>
+          <div class="seg-group compact" id="segTcOnline">
+            <button class="seg" data-val="1+0">1+0</button>
+            <button class="seg active" data-val="3+2">3+2</button>
+            <button class="seg" data-val="5+0">5+0</button>
+            <button class="seg" data-val="10+0">10+0</button>
+          </div>
+        </div>
+
+        <div id="onlineStatus" class="status-msg" style="display:none"></div>
+
+        <div id="onlineActions">
+          <button class="btn prim full" id="btnQuickMatch">PROCURAR OPONENTE</button>
+          <div class="two-col">
+            <button class="btn" id="btnCreateRoom">Criar Sala</button>
+            <button class="btn" id="btnShowJoin">Entrar com Código</button>
+          </div>
+          <button class="btn full" id="btnLeaderboard">🏆 Ranking</button>
+        </div>
+
+        <div id="searchBox" style="display:none">
+          <div class="status-msg" id="searchTxt">Procurando oponente…</div>
+          <button class="btn full" id="btnCancelSearch">Cancelar Busca</button>
+        </div>
+
+        <div id="roomBox" style="display:none">
+          <div class="room-code" id="roomCodeTxt">------</div>
+          <div class="two-col">
+            <button class="btn prim" id="btnCopyRoom">Copiar Link</button>
+            <button class="btn" id="btnCancelRoom">Cancelar</button>
+          </div>
+        </div>
+
+        <div id="joinBox" style="display:none">
+          <div class="two-col">
+            <input type="text" id="joinInput" class="txt-input" maxlength="8" placeholder="CÓDIGO">
+            <button class="btn prim" id="btnJoinRoom">Entrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CONFIGURAÇÕES DE APARÊNCIA -->
+  <div class="overlay hide" id="settingsOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow">ESTÚDIO 3D</div>
+      <h2 class="modal-title">Tabuleiro & Peças</h2>
+      <div class="field-row">
+        <label>Tabuleiro</label>
+        <div class="swatch-row" id="boardSwatches"></div>
+      </div>
+      <div class="field-row">
+        <label>Peças</label>
+        <div class="swatch-row" id="pieceSwatches"></div>
+      </div>
+      <div class="field-row">
+        <label>Barra de Avaliação (Local)</label>
+        <div class="seg-group compact" id="segEval">
+          <button class="seg active" data-val="0">Oculta</button>
+          <button class="seg" data-val="1">Visível</button>
+        </div>
+      </div>
+      <button class="btn prim full" id="btnCloseSettings">CONCLUIR</button>
+    </div>
+  </div>
+
+  <!-- RANKING -->
+  <div class="overlay hide" id="lbOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow">CLASSIFICAÇÃO ELO</div>
+      <h2 class="modal-title">Top 10 Jogadores</h2>
+      <div id="lbList" class="lb-list"></div>
+      <button class="btn full" id="btnCloseLb">FECHAR</button>
+    </div>
+  </div>
+
+  <!-- FIM DE JOGO -->
+  <div class="overlay hide" id="overOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow" id="overEyebrow">FIM DE PARTIDA</div>
+      <h2 class="modal-title" id="overTitle">Brancas Vencem</h2>
+      <p class="hero-sub" id="overSub">Xeque-mate</p>
+      <div id="overDelta" class="delta-badge" style="display:none"></div>
+      <button class="btn prim full" id="btnRematch">JOGAR NOVAMENTE</button>
+      <button class="btn full" id="btnOverMenu">VOLTAR AO MENU</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
