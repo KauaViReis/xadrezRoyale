@@ -46,6 +46,18 @@ export const BOARD_THEMES = [
     tex: 'none',
     fillet: 0x8A8E94,
     coord: 0xF5F5F5
+  },
+  {
+    id: 'gtavi',
+    name: 'VICE SUNSET (GTA VI)',
+    light: 0xF7C5B8,
+    dark: 0x2B1B3D,
+    frame: 0x170E24,
+    table: 0x100A19,
+    bg: 0x0C0714,
+    tex: 'marble',
+    fillet: 0xFF5FA2,
+    coord: 0x27D8E8
   }
 ];
 
@@ -53,5 +65,6 @@ export const PIECE_THEMES = [
   { id: 'boxwood', name: 'BUXO & ÉBANO', w: 0xF3E8D2, b: 0x25211E, metal: false, tex: 'wood' },
   { id: 'ivory', name: 'MARFIM & ÔNIX', w: 0xFAF6EE, b: 0x18191C, metal: false, tex: 'ivory' },
   { id: 'brass', name: 'LATÃO & AÇO', w: 0xD7B265, b: 0x6B747E, metal: true, tex: 'metal' },
-  { id: 'accessible', name: 'DALTÔNICO (OURO×AZUL)', w: 0xF2C94C, b: 0x2F80ED, metal: false, tex: 'matte' }
+  { id: 'accessible', name: 'DALTÔNICO (OURO×AZUL)', w: 0xF2C94C, b: 0x2F80ED, metal: false, tex: 'matte' },
+  { id: 'gtavi', name: 'VICE NEON (GTA VI)', w: 0xFFB3D9, b: 0x27D8E8, metal: true, tex: 'metal' }
 ];

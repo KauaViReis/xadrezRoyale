@@ -65,6 +65,7 @@ function savePrefs() {
       aiDepth,
       evalVisible,
       muted: audio.muted,
+      music: audio.musicEnabled,
       nick
     }));
   } catch { /* noop */ }
@@ -83,7 +84,17 @@ fx.setHintAssets(geos, PIECE_THEMES[pieceThemeIdx]);
 const cam = new CameraController(canvas, camera);
 const audio = new AudioManager();
 audio.muted = !!prefs.muted;
+audio.musicEnabled = prefs.music !== false;
 $('#btnSound').textContent = audio.muted ? '🔇' : '🔊';
+if (audio.musicEnabled && !audio.muted) {
+  const startAmbientOnce = () => {
+    audio.startMusic();
+    window.removeEventListener('pointerdown', startAmbientOnce);
+    window.removeEventListener('keydown', startAmbientOnce);
+  };
+  window.addEventListener('pointerdown', startAmbientOnce, { once: true });
+  window.addEventListener('keydown', startAmbientOnce, { once: true });
+}
 
 /* ============ WEB WORKER IA ============ */
 const aiWorker = new Worker(new URL('./workers/ai.worker.js', import.meta.url), { type: 'module' });
@@ -909,6 +920,10 @@ bindSeg('#segQuality', v => {
     pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx] }
   });
 });
+bindSeg('#segMusic', v => { audio.setMusic(v === '1'); savePrefs(); });
+if (!audio.musicEnabled) {
+  document.querySelectorAll('#segMusic .seg').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
+}
 bindSeg('#segHaptics', v => { setHaptics(v === '1'); });
 
 let activeArrowColor = 'green';
@@ -943,7 +958,7 @@ $('#btnView2D').onclick = async () => {
 };
 $('#btnFlip').onclick = () => cam.flipBoard();
 $('#btnSound').onclick = () => {
-  audio.muted = !audio.muted;
+  audio.setMuted(!audio.muted);
   $('#btnSound').textContent = audio.muted ? '🔇' : '🔊';
   $('#btnSound').setAttribute('aria-pressed', String(audio.muted));
   savePrefs();

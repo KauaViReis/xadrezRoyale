@@ -7,6 +7,11 @@ export class AudioManager {
   constructor() {
     this.ctx = null;
     this.muted = false;
+    this.musicEnabled = true;
+    this.musicPlaying = false;
+    this._musicTimer = null;
+    this._musicMaster = null;
+    this._chordIdx = 0;
   }
 
   _ensure() {
@@ -35,6 +40,77 @@ export class AudioManager {
     gain.connect(ctx.destination);
     osc.start(now);
     osc.stop(now + dur);
+  }
+
+  /* Música ambiente procedural (pad lo-fi / Vice Sunset suave) */
+  startMusic() {
+    if (this.muted || !this.musicEnabled || this.musicPlaying) return;
+    const ctx = this._ensure();
+    if (!ctx) return;
+
+    this.musicPlaying = true;
+    this._musicMaster = ctx.createGain();
+    this._musicMaster.gain.setValueAtTime(0.001, ctx.currentTime);
+    this._musicMaster.gain.linearRampToValueAtTime(0.085, ctx.currentTime + 1.5);
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(880, ctx.currentTime);
+    this._musicMaster.connect(filter);
+    filter.connect(ctx.destination);
+
+    /* Progressão relaxante Dm9 -> G13 -> Cmaj9 -> A7sus4 */
+    const chords = [
+      [146.83, 261.63, 329.63, 440.00],
+      [98.00,  246.94, 329.63, 392.00],
+      [130.81, 246.94, 293.66, 392.00],
+      [110.00, 220.00, 293.66, 392.00]
+    ];
+
+    const playChord = () => {
+      if (!this.musicPlaying || this.muted || !this.musicEnabled || !this._musicMaster) return;
+      const now = ctx.currentTime;
+      const notes = chords[this._chordIdx % chords.length];
+      this._chordIdx++;
+
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx === 0 ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        g.gain.setValueAtTime(0.0001, now);
+        g.gain.linearRampToValueAtTime(idx === 0 ? 0.34 : 0.18, now + 0.8);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.4);
+        osc.connect(g);
+        g.connect(this._musicMaster);
+        osc.start(now);
+        osc.stop(now + 3.5);
+      });
+    };
+
+    playChord();
+    this._musicTimer = setInterval(playChord, 3100);
+  }
+
+  stopMusic() {
+    this.musicPlaying = false;
+    if (this._musicTimer) { clearInterval(this._musicTimer); this._musicTimer = null; }
+    if (this._musicMaster) {
+      try { this._musicMaster.disconnect(); } catch { /* noop */ }
+      this._musicMaster = null;
+    }
+  }
+
+  setMusic(on) {
+    this.musicEnabled = !!on;
+    if (!this.musicEnabled || this.muted) this.stopMusic();
+    else this.startMusic();
+  }
+
+  setMuted(muted) {
+    this.muted = !!muted;
+    if (this.muted) this.stopMusic();
+    else if (this.musicEnabled) this.startMusic();
   }
 
   select() { this._tone(520, 0.045, 'sine', 0.06, 660); }
