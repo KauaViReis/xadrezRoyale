@@ -1,6 +1,7 @@
 /* ============================================================
-   XADREZ ROYALE — Peças Staunton 3D Esculpidas
-   Geometrias compartilhadas por tipo (p, r, n, b, q, k) + UVs + PBR
+   XADREZ ROYALE — Peças Staunton Championship 3D Esculpidas
+   Curvas Spline + Cavalo 3D Multi-Seção + Mitra com Corte +
+   Coroa de Pérolas + Ameias Curvas + Cruz Pattée + Vertex AO/Feltro + LOD
    ============================================================ */
 
 import * as THREE from 'three';
@@ -36,6 +37,30 @@ function mulberry32(seed) {
 
 function lathe(pts, segs = 28) {
   return new THREE.LatheGeometry(pts.map(([x, y]) => new THREE.Vector2(x, y)), segs);
+}
+
+/* Interpola seções curvas com SplineCurve preservando quinas vivas (colarinhos/anéis) */
+function smoothLathe(sections, radialSegs = 28, subDiv = 4) {
+  const out = [];
+  for (const sec of sections) {
+    if (sec.length <= 2 || subDiv <= 1) {
+      for (const pt of sec) {
+        if (!out.length || Math.hypot(pt[0] - out[out.length - 1][0], pt[1] - out[out.length - 1][1]) > 1e-4) {
+          out.push(pt);
+        }
+      }
+    } else {
+      const curve = new THREE.SplineCurve(sec.map(([x, y]) => new THREE.Vector2(x, y)));
+      const samples = curve.getPoints((sec.length - 1) * subDiv);
+      for (const v of samples) {
+        const pt = [Math.max(0.001, v.x), v.y];
+        if (!out.length || Math.hypot(pt[0] - out[out.length - 1][0], pt[1] - out[out.length - 1][1]) > 1e-4) {
+          out.push(pt);
+        }
+      }
+    }
+  }
+  return lathe(out, radialSegs);
 }
 
 function normalizeLatheV(geo, minY, maxY) {
@@ -109,7 +134,30 @@ function applyHeightV(geo, minY, maxY) {
   return geo;
 }
 
-/* Merge de BufferGeometries estáticas preservando position, normal e UVs normalizados */
+/* Calcula Ambient Occlusion procedural, base de feltro e anel metálico em vertex colors */
+function computePieceVertexColor(x, y, z, ny, minY, maxY) {
+  const h = clamp01((y - minY) / Math.max(1e-5, maxY - minY));
+  const r = Math.hypot(x, z);
+
+  /* 1. Base de feltro escuro (y < 0.022) */
+  if (y < 0.022) {
+    return [0.42, 0.40, 0.38];
+  }
+
+  /* 2. Anel de transição / filete polido na base (0.044 <= y <= 0.068) */
+  if (y >= 0.044 && y <= 0.068 && r > 0.22) {
+    return [1.06, 1.03, 0.96];
+  }
+
+  /* 3. Gradiente vertical natural + oclusão em sulcos voltados para baixo */
+  const verticalLift = 0.88 + 0.14 * Math.pow(h, 0.55);
+  const grooveShade = ny < -0.25 ? (1 + (ny + 0.25) * 0.22) : 1.0;
+  const collarCrevice = (Math.abs(y - 0.12) < 0.018 || Math.abs(y - 0.19) < 0.018) ? 0.90 : 1.0;
+  const s = clamp01(verticalLift * grooveShade * collarCrevice);
+  return [s, s, s];
+}
+
+/* Merge de BufferGeometries estáticas preservando position, normal, UVs e vertex color AO */
 function mergeGeos(geos) {
   const nonIndexed = geos.map(g => (g.index ? g.toNonIndexed() : g));
   let totalVerts = 0;
@@ -130,6 +178,7 @@ function mergeGeos(geos) {
   const pos = new Float32Array(totalVerts * 3);
   const norm = new Float32Array(totalVerts * 3);
   const uv = new Float32Array(totalVerts * 2);
+  const col = new Float32Array(totalVerts * 3);
   let offset3 = 0;
   let offset2 = 0;
 
@@ -138,23 +187,35 @@ function mergeGeos(geos) {
     const pAttr = g.attributes.position;
     const nAttr = g.attributes.normal;
     const uvAttr = g.attributes.uv;
+    const colAttr = g.attributes.color;
     const count = pAttr.count;
 
     pos.set(pAttr.array, offset3);
     norm.set(nAttr.array, offset3);
 
-    if (uvAttr) {
-      for (let i = 0; i < count; i++) {
+    for (let i = 0; i < count; i++) {
+      const x = pAttr.getX(i);
+      const y = pAttr.getY(i);
+      const z = pAttr.getZ(i);
+      const ny = nAttr.getY(i);
+
+      if (uvAttr) {
         uv[offset2 + i * 2] = clamp01(uvAttr.getX(i));
         uv[offset2 + i * 2 + 1] = clamp01(uvAttr.getY(i));
-      }
-    } else {
-      for (let i = 0; i < count; i++) {
-        const x = pAttr.getX(i);
-        const y = pAttr.getY(i);
-        const z = pAttr.getZ(i);
+      } else {
         uv[offset2 + i * 2] = clamp01(Math.abs(Math.atan2(x, z)) / Math.PI);
         uv[offset2 + i * 2 + 1] = clamp01((y - minY) / spanY);
+      }
+
+      if (colAttr) {
+        col[offset3 + i * 3] = colAttr.getX(i);
+        col[offset3 + i * 3 + 1] = colAttr.getY(i);
+        col[offset3 + i * 3 + 2] = colAttr.getZ(i);
+      } else {
+        const [cr, cg, cb] = computePieceVertexColor(x, y, z, ny, minY, maxY);
+        col[offset3 + i * 3] = cr;
+        col[offset3 + i * 3 + 1] = cg;
+        col[offset3 + i * 3 + 2] = cb;
       }
     }
 
@@ -171,96 +232,299 @@ function mergeGeos(geos) {
   merged.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   merged.setAttribute('normal', new THREE.BufferAttribute(norm, 3));
   merged.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  merged.setAttribute('color', new THREE.BufferAttribute(col, 3));
   return merged;
+}
+
+/* Base Staunton Championship compartilhada (toro duplo, cavetto e filete de base) */
+function stauntonBaseSections(rScale = 1.0) {
+  const s = r => +(r * rScale).toFixed(4);
+  return [
+    [[0.001, 0], [s(0.305), 0], [s(0.312), 0.022], [s(0.305), 0.044]],
+    [[s(0.305), 0.044], [s(0.318), 0.056], [s(0.302), 0.068]],
+    [[s(0.302), 0.068], [s(0.258), 0.095], [s(0.275), 0.122], [s(0.245), 0.145]],
+    [[s(0.245), 0.145], [s(0.205), 0.175], [s(0.222), 0.195], [s(0.188), 0.212]]
+  ];
+}
+
+/* Merlão (ameia) curvo para a coroa da Torre */
+function createCurvedMerlonGeo(innerR, outerR, height, startAng, endAng, arcSegs = 4) {
+  const shape = new THREE.Shape();
+  for (let i = 0; i <= arcSegs; i++) {
+    const a = startAng + (endAng - startAng) * (i / arcSegs);
+    const x = Math.cos(a) * outerR;
+    const y = Math.sin(a) * outerR;
+    if (i === 0) shape.moveTo(x, y);
+    else shape.lineTo(x, y);
+  }
+  for (let i = arcSegs; i >= 0; i--) {
+    const a = startAng + (endAng - startAng) * (i / arcSegs);
+    const x = Math.cos(a) * innerR;
+    const y = Math.sin(a) * innerR;
+    shape.lineTo(x, y);
+  }
+  shape.closePath();
+
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: height,
+    bevelEnabled: true,
+    bevelThickness: 0.01,
+    bevelSize: 0.008,
+    bevelSegments: 1
+  });
+  geo.rotateX(-Math.PI / 2);
+  return geo;
+}
+
+/* Esculpe o entalhe diagonal real (mitre slit) na cabeça do Bispo */
+function carveBishopMitreSlit(geo) {
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    if (y > 0.72 && y < 0.93 && z > 0.01) {
+      /* Plano inclinado do corte da mitra */
+      const planeDist = Math.abs((y - 0.825) - z * 0.45);
+      if (planeDist < 0.032) {
+        const depthFactor = 1 - (1 - planeDist / 0.032) * 0.34;
+        pos.setXYZ(i, x * depthFactor, y, z * depthFactor);
+      }
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* Constrói a cabeça 3D orgânica do Cavalo Staunton (focinho, mandíbula, orelhas, olhos e crina) */
+function createSculptedKnightParts(tier, maxH) {
+  const isHigh = tier === 'high';
+  const bevelSegs = tier === 'low' ? 1 : (isHigh ? 3 : 2);
+
+  /* 1. Corpo central / pescoço arqueado / mandíbula / focinho */
+  const headShape = new THREE.Shape();
+  headShape.moveTo(-0.145, 0.205);
+  headShape.lineTo(0.145, 0.205);
+  headShape.bezierCurveTo(0.185, 0.32, 0.165, 0.46, 0.095, 0.54); // peito -> garganta
+  headShape.lineTo(0.125, 0.515);                                 // queixo / mandíbula
+  headShape.bezierCurveTo(0.195, 0.54, 0.255, 0.57, 0.275, 0.605); // parte inferior do focinho
+  headShape.bezierCurveTo(0.288, 0.635, 0.268, 0.675, 0.235, 0.695); // ponta do focinho / narina
+  headShape.bezierCurveTo(0.185, 0.735, 0.115, 0.785, 0.055, 0.835); // chanfro nasal -> testa
+  headShape.lineTo(0.025, 0.875);
+  headShape.bezierCurveTo(-0.045, 0.865, -0.135, 0.815, -0.175, 0.715); // nuca arqueada
+  headShape.bezierCurveTo(-0.215, 0.585, -0.195, 0.365, -0.145, 0.205); // dorso do pescoço
+
+  const headGeo = new THREE.ExtrudeGeometry(headShape, {
+    depth: 0.13,
+    bevelEnabled: true,
+    bevelThickness: 0.042,
+    bevelSize: 0.034,
+    bevelSegments: bevelSegs,
+    curveSegments: tier === 'low' ? 10 : 18
+  });
+  headGeo.translate(0, 0, -0.065);
+
+  /* Afila o focinho em 3D (anatomia real: largo nas bochechas, fino no nariz, largo no peito) */
+  const hPos = headGeo.attributes.position;
+  for (let i = 0; i < hPos.count; i++) {
+    const px = hPos.getX(i); // frente (+x) / trás (-x)
+    const py = hPos.getY(i);
+    const pz = hPos.getZ(i); // largura lateral
+
+    let widthMul = 1.0;
+    if (px > 0.08) {
+      /* Afilamento progressivo até o focinho */
+      const snoutT = clamp01((px - 0.08) / 0.20);
+      widthMul *= 1.0 - snoutT * 0.46;
+    }
+    if (py > 0.52 && py < 0.74 && px > -0.05 && px < 0.11) {
+      /* Volume muscular das bochechas/mandíbula */
+      widthMul *= 1.14;
+    }
+    if (py < 0.34) {
+      /* Base do pescoço encorpada para fundir na base torneada */
+      const baseT = clamp01((0.34 - py) / 0.14);
+      widthMul *= 1.0 + baseT * 0.24;
+    }
+    hPos.setZ(i, pz * widthMul);
+  }
+  hPos.needsUpdate = true;
+  headGeo.rotateY(Math.PI / 2);
+  applyCylindricalFoldedUV(headGeo, 0, maxH);
+
+  const parts = [headGeo];
+
+  /* 2. Duas orelhas alertas esculpidas em 3D (separadas lateralmente) */
+  const earSegs = tier === 'low' ? 6 : 10;
+  for (const side of [-1, 1]) {
+    const ear = new THREE.ConeGeometry(0.036, 0.115, earSegs);
+    ear.rotateZ(-0.22);
+    ear.rotateX(side * 0.18);
+    ear.translate(side * 0.046, 0.895, 0.015);
+    applyCylindricalFoldedUV(ear, 0, maxH);
+    parts.push(ear);
+  }
+
+  /* 3. Crina esculpida em gomos ao longo do dorso do pescoço */
+  const maneCount = tier === 'low' ? 4 : 7;
+  const maneSphereSegs = tier === 'low' ? 6 : 10;
+  for (let i = 0; i < maneCount; i++) {
+    const t = i / (maneCount - 1);
+    const my = 0.28 + t * 0.54;
+    const mz = -0.155 - Math.sin(t * Math.PI) * 0.042 + t * 0.035;
+    const radius = 0.044 - Math.abs(t - 0.45) * 0.018;
+    const ridge = new THREE.SphereGeometry(radius, maneSphereSegs, maneSphereSegs);
+    ridge.scale(0.72, 0.95, 1.32);
+    ridge.translate(0, my, mz);
+    applyCylindricalFoldedUV(ridge, 0, maxH);
+    parts.push(ridge);
+  }
+
+  /* 4. Olhos e narinas esculpidos (high / medium) */
+  if (tier !== 'low') {
+    for (const side of [-1, 1]) {
+      const eye = new THREE.SphereGeometry(0.018, 8, 8);
+      eye.translate(side * 0.068, 0.745, 0.085);
+      applyCylindricalFoldedUV(eye, 0, maxH);
+      parts.push(eye);
+
+      const nostril = new THREE.SphereGeometry(0.014, 7, 7);
+      nostril.translate(side * 0.034, 0.648, 0.242);
+      applyCylindricalFoldedUV(nostril, 0, maxH);
+      parts.push(nostril);
+    }
+  }
+
+  return parts;
+}
+
+/* Cruz Pattée chanfrada para o topo do Rei */
+function createKingPatteeCross(tier, maxH) {
+  const s = new THREE.Shape();
+  /* Cruz imperial com braços trapezoidais alargados nas pontas */
+  s.moveTo(-0.026, 0.0);
+  s.lineTo(0.026, 0.0);
+  s.lineTo(0.022, 0.075);
+  s.lineTo(0.082, 0.062);
+  s.lineTo(0.082, 0.122);
+  s.lineTo(0.022, 0.109);
+  s.lineTo(0.032, 0.185);
+  s.lineTo(-0.032, 0.185);
+  s.lineTo(-0.022, 0.109);
+  s.lineTo(-0.082, 0.122);
+  s.lineTo(-0.082, 0.062);
+  s.lineTo(-0.022, 0.075);
+  s.closePath();
+
+  const cross = new THREE.ExtrudeGeometry(s, {
+    depth: 0.044,
+    bevelEnabled: tier !== 'low',
+    bevelThickness: 0.009,
+    bevelSize: 0.008,
+    bevelSegments: 1
+  });
+  cross.translate(0, 1.075, -0.022);
+  applyCrownBoxUV(cross, 0, maxH);
+  return cross;
 }
 
 export function createChessGeometries(tier = 'high') {
   const t = normalizeTier(tier);
-  const segs = t === 'low' ? 18 : 28;
+  const segs = t === 'low' ? 18 : (t === 'medium' ? 28 : 40);
+  const subDiv = t === 'low' ? 2 : 4;
 
-  /* 1. Peão (Pawn) */
-  const pawn = normalizeLatheV(lathe([
-    [0.001, 0], [0.27, 0], [0.28, 0.05], [0.22, 0.09],
-    [0.14, 0.16], [0.09, 0.36], [0.16, 0.40], [0.09, 0.43],
-    [0.14, 0.52], [0.12, 0.62], [0.001, 0.67]
-  ], segs), 0, 0.67);
+  /* 1. Peão (Pawn) — Staunton com colarinho duplo e esfera polida */
+  const pawnGeo = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(0.90),
+    [[0.169, 0.212], [0.118, 0.295], [0.092, 0.385], [0.084, 0.445]],
+    [[0.084, 0.445], [0.158, 0.462], [0.158, 0.478], [0.095, 0.492]],
+    [[0.095, 0.492], [0.138, 0.535], [0.148, 0.595], [0.112, 0.652], [0.048, 0.682], [0.001, 0.69]]
+  ], segs, subDiv), 0, 0.69);
+  const pawn = mergeGeos([pawnGeo]);
 
-  /* 2. Torre (Rook) */
-  const rookBase = normalizeLatheV(lathe([
-    [0.001, 0], [0.30, 0], [0.31, 0.06], [0.24, 0.11],
-    [0.19, 0.20], [0.16, 0.56], [0.24, 0.62], [0.24, 0.75],
-    [0.16, 0.75], [0.16, 0.69], [0.001, 0.69]
-  ], segs), 0, 0.83);
-  const battlementParts = [rookBase];
-  for (let i = 0; i < 4; i++) {
-    const ang = (i * Math.PI) / 2;
-    const b = new THREE.BoxGeometry(0.11, 0.08, 0.08);
-    b.translate(Math.cos(ang) * 0.20, 0.79, Math.sin(ang) * 0.20);
-    b.rotateY(-ang);
-    applyCrownBoxUV(b, 0, 0.83);
-    battlementParts.push(b);
+  /* 2. Torre (Rook) — Fuste cônico, colarinho e 6 ameias curvas */
+  const rookMaxH = 0.84;
+  const rookBody = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(0.98),
+    [[0.184, 0.212], [0.168, 0.38], [0.154, 0.56]],
+    [[0.154, 0.56], [0.212, 0.585], [0.178, 0.612]],
+    [[0.178, 0.612], [0.238, 0.65], [0.238, 0.76]],
+    [[0.238, 0.76], [0.165, 0.76], [0.165, 0.705], [0.001, 0.705]]
+  ], segs, subDiv), 0, rookMaxH);
+
+  const rookParts = [rookBody];
+  const merlonCount = 6;
+  const arcSegs = t === 'low' ? 2 : 4;
+  for (let i = 0; i < merlonCount; i++) {
+    const step = (Math.PI * 2) / merlonCount;
+    const a0 = i * step + 0.09;
+    const a1 = (i + 1) * step - 0.09;
+    const merlon = createCurvedMerlonGeo(0.165, 0.236, 0.075, a0, a1, arcSegs);
+    merlon.translate(0, 0.758, 0);
+    applyCrownBoxUV(merlon, 0, rookMaxH);
+    rookParts.push(merlon);
   }
-  const rook = mergeGeos(battlementParts);
+  const rook = mergeGeos(rookParts);
 
-  /* 3. Cavalo (Knight) */
-  const knightBase = normalizeLatheV(lathe([
-    [0.001, 0], [0.30, 0], [0.31, 0.06], [0.23, 0.12],
-    [0.18, 0.20], [0.001, 0.21]
-  ], segs), 0, 0.915);
-  const shape = new THREE.Shape();
-  shape.moveTo(-0.14, 0.20);
-  shape.lineTo(0.15, 0.20);
-  shape.quadraticCurveTo(0.18, 0.42, 0.10, 0.58);
-  shape.lineTo(0.22, 0.63);
-  shape.lineTo(0.18, 0.72);
-  shape.lineTo(0.06, 0.80);
-  shape.lineTo(0.02, 0.88);
-  shape.lineTo(-0.06, 0.82);
-  shape.quadraticCurveTo(-0.18, 0.74, -0.19, 0.50);
-  shape.quadraticCurveTo(-0.18, 0.34, -0.14, 0.20);
-  const head = new THREE.ExtrudeGeometry(shape, {
-    depth: 0.16,
-    bevelEnabled: true,
-    bevelThickness: 0.035,
-    bevelSize: 0.03,
-    bevelSegments: 2
-  });
-  head.translate(0, 0, -0.08);
-  head.rotateY(Math.PI / 2);
-  applyCylindricalFoldedUV(head, 0, 0.915);
-  const knight = mergeGeos([knightBase, head]);
+  /* 3. Cavalo (Knight) — Base torneada + escultura 3D orgânica multi-seção */
+  const knightMaxH = 0.94;
+  const knightBase = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(0.98),
+    [[0.184, 0.212], [0.162, 0.232], [0.001, 0.235]]
+  ], segs, subDiv), 0, knightMaxH);
+  const knight = mergeGeos([knightBase, ...createSculptedKnightParts(t, knightMaxH)]);
 
-  /* 4. Bispo (Bishop) */
-  const bishop = normalizeLatheV(lathe([
-    [0.001, 0], [0.29, 0], [0.30, 0.06], [0.22, 0.11],
-    [0.14, 0.22], [0.10, 0.52], [0.17, 0.56], [0.11, 0.59],
-    [0.15, 0.72], [0.11, 0.84], [0.04, 0.90], [0.06, 0.94], [0.001, 0.96]
-  ], segs), 0, 0.96);
+  /* 4. Bispo (Bishop) — Colarinho duplo + Mitra com corte diagonal real + Finial */
+  const bishopMaxH = 0.98;
+  const bishopBody = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(0.96),
+    [[0.180, 0.212], [0.132, 0.34], [0.102, 0.51]],
+    [[0.102, 0.51], [0.175, 0.535], [0.145, 0.562], [0.165, 0.582], [0.108, 0.605]],
+    [[0.108, 0.605], [0.158, 0.695], [0.155, 0.79], [0.105, 0.885], [0.036, 0.93], [0.001, 0.935]]
+  ], segs, subDiv), 0, bishopMaxH);
+  carveBishopMitreSlit(bishopBody);
+  const bFinial = new THREE.SphereGeometry(0.036, t === 'low' ? 8 : 14, t === 'low' ? 6 : 10);
+  bFinial.translate(0, 0.952, 0);
+  applyHeightV(bFinial, 0, bishopMaxH);
+  const bishop = mergeGeos([bishopBody, bFinial]);
 
-  /* 5. Dama (Queen) */
-  const queenBody = normalizeLatheV(lathe([
-    [0.001, 0], [0.33, 0], [0.34, 0.07], [0.25, 0.13],
-    [0.17, 0.26], [0.12, 0.66], [0.21, 0.72], [0.14, 0.75],
-    [0.21, 0.92], [0.14, 0.94], [0.08, 1.02], [0.001, 1.05]
-  ], segs), 0, 1.145);
-  const qSphere = new THREE.SphereGeometry(0.055, 12, 10);
-  qSphere.translate(0, 1.09, 0);
-  applyHeightV(qSphere, 0, 1.145);
-  const queen = mergeGeos([queenBody, qSphere]);
+  /* 5. Dama (Queen) — Colarinho duplo + Coroa real com 10 pérolas/pontas + Esfera central */
+  const queenMaxH = 1.15;
+  const queenBody = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(1.05),
+    [[0.197, 0.212], [0.152, 0.38], [0.118, 0.64]],
+    [[0.118, 0.64], [0.205, 0.672], [0.165, 0.702], [0.192, 0.728], [0.134, 0.752]],
+    [[0.134, 0.752], [0.172, 0.86], [0.218, 0.955], [0.165, 0.985], [0.125, 1.035], [0.001, 1.05]]
+  ], segs, subDiv), 0, queenMaxH);
 
-  /* 6. Rei (King) */
-  const kingBody = normalizeLatheV(lathe([
-    [0.001, 0], [0.35, 0], [0.36, 0.07], [0.26, 0.14],
-    [0.18, 0.28], [0.13, 0.72], [0.22, 0.78], [0.15, 0.82],
-    [0.21, 0.98], [0.16, 1.04], [0.001, 1.06]
-  ], segs), 0, 1.25);
-  const crossV = new THREE.BoxGeometry(0.055, 0.20, 0.055);
-  crossV.translate(0, 1.15, 0);
-  applyCrownBoxUV(crossV, 0, 1.25);
-  const crossH = new THREE.BoxGeometry(0.16, 0.055, 0.055);
-  crossH.translate(0, 1.18, 0);
-  applyCrownBoxUV(crossH, 0, 1.25);
-  const king = mergeGeos([kingBody, crossV, crossH]);
+  const queenParts = [queenBody];
+  const pearlCount = t === 'low' ? 6 : 10;
+  const pearlSegs = t === 'low' ? 6 : 10;
+  for (let i = 0; i < pearlCount; i++) {
+    const ang = (i / pearlCount) * Math.PI * 2;
+    const pearl = new THREE.SphereGeometry(0.028, pearlSegs, pearlSegs);
+    pearl.scale(0.85, 1.35, 0.85);
+    pearl.translate(Math.cos(ang) * 0.192, 0.978, Math.sin(ang) * 0.192);
+    applyHeightV(pearl, 0, queenMaxH);
+    queenParts.push(pearl);
+  }
+  const qApex = new THREE.SphereGeometry(0.048, t === 'low' ? 8 : 14, t === 'low' ? 8 : 12);
+  qApex.translate(0, 1.088, 0);
+  applyHeightV(qApex, 0, queenMaxH);
+  queenParts.push(qApex);
+  const queen = mergeGeos(queenParts);
+
+  /* 6. Rei (King) — Colarinho Imperial Duplo + Cúpula + Cruz Pattée Chanfrada */
+  const kingMaxH = 1.28;
+  const kingBody = normalizeLatheV(smoothLathe([
+    ...stauntonBaseSections(1.10),
+    [[0.207, 0.212], [0.162, 0.42], [0.128, 0.69]],
+    [[0.128, 0.69], [0.222, 0.725], [0.175, 0.758], [0.206, 0.786], [0.146, 0.812]],
+    [[0.146, 0.812], [0.188, 0.92], [0.224, 1.01], [0.168, 1.055], [0.075, 1.08], [0.001, 1.085]]
+  ], segs, subDiv), 0, kingMaxH);
+  const kingCross = createKingPatteeCross(t, kingMaxH);
+  const king = mergeGeos([kingBody, kingCross]);
 
   return { p: pawn, r: rook, n: knight, b: bishop, q: queen, k: king };
 }
@@ -313,46 +577,48 @@ export function getPieceTextures(texKind = 'wood', tier = 'high') {
 
   if (k === 'wood') {
     map = makePieceCanvasTex(size, THREE.SRGBColorSpace, anisotropy, (u, v) => {
-      const fiber = Math.sin((u * 12 + Math.sin(v * tau * 2) * 0.25) * tau);
-      const sub = Math.sin((u * 26 + v * 2) * tau) * 0.4;
-      return 241 + fiber * 8 + sub * 4 + (rngM() - 0.5) * 4;
+      const fiber = Math.sin((u * 14 + Math.sin(v * tau * 2.5) * 0.28) * tau);
+      const latheGroove = Math.sin(v * tau * 64) * 3.5;
+      const sub = Math.sin((u * 28 + v * 2) * tau) * 0.45;
+      return 238 + fiber * 11 + latheGroove + sub * 5 + (rngM() - 0.5) * 5;
     });
     bumpMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
-      const fiber = Math.sin((u * 12 + Math.sin(v * tau * 2) * 0.25) * tau);
-      return 128 + fiber * 16 + (rngB() - 0.5) * 12;
+      const fiber = Math.sin((u * 14 + Math.sin(v * tau * 2.5) * 0.28) * tau);
+      const latheGroove = Math.sin(v * tau * 64) * 10;
+      return 128 + fiber * 22 + latheGroove + (rngB() - 0.5) * 14;
     });
     roughnessMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
-      const fiber = Math.sin((u * 12 + Math.sin(v * tau * 2) * 0.25) * tau);
-      return 222 - fiber * 18 + (rngR() - 0.5) * 14;
+      const fiber = Math.sin((u * 14 + Math.sin(v * tau * 2.5) * 0.28) * tau);
+      return 216 - fiber * 24 + (rngR() - 0.5) * 16;
     });
   } else if (k === 'ivory') {
     map = makePieceCanvasTex(size, THREE.SRGBColorSpace, anisotropy, (u, v) => {
       const vein = Math.sin((u * 3 + v * 5 + Math.sin(u * tau * 2) * 0.3) * tau);
-      return 247 + vein * 5 + (rngM() - 0.5) * 3;
+      return 246 + vein * 6 + (rngM() - 0.5) * 3;
     });
     bumpMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
       const vein = Math.sin((u * 3 + v * 5) * tau);
-      return 128 + vein * 8 + (rngB() - 0.5) * 8;
+      const turn = Math.sin(v * tau * 52) * 6;
+      return 128 + vein * 11 + turn + (rngB() - 0.5) * 8;
     });
     roughnessMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
       const sheen = Math.cos((u * 2 + v * 4) * tau);
-      return 228 + sheen * 12 + (rngR() - 0.5) * 10;
+      return 224 + sheen * 14 + (rngR() - 0.5) * 10;
     });
   } else if (k === 'metal') {
     map = makePieceCanvasTex(size, THREE.SRGBColorSpace, anisotropy, (u, v) => {
-      const band = Math.sin(v * tau * 42) * 5 + Math.cos(u * tau * 2) * 3;
-      return 242 + band + (rngM() - 0.5) * 6;
+      const band = Math.sin(v * tau * 48) * 6 + Math.cos(u * tau * 2) * 3;
+      return 240 + band + (rngM() - 0.5) * 6;
     });
     bumpMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
-      const brush = Math.sin(v * tau * 42) * 16;
+      const brush = Math.sin(v * tau * 48) * 20;
       return 128 + brush + (rngB() - 0.5) * 12;
     });
     roughnessMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, (u, v) => {
-      const brush = Math.sin(v * tau * 42) * 20 + Math.sin(u * tau * 3) * 6;
-      return 220 + brush + (rngR() - 0.5) * 16;
+      const brush = Math.sin(v * tau * 48) * 24 + Math.sin(u * tau * 3) * 6;
+      return 216 + brush + (rngR() - 0.5) * 16;
     });
   } else {
-    /* 'matte' */
     map = makePieceCanvasTex(size, THREE.SRGBColorSpace, anisotropy, () => 250 + (rngM() - 0.5) * 5);
     bumpMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, () => 128 + (rngB() - 0.5) * 14);
     roughnessMap = makePieceCanvasTex(size, THREE.NoColorSpace, anisotropy, () => 242 + (rngR() - 0.5) * 12);
@@ -372,8 +638,9 @@ export function newPieceMaterial(colorHex, theme, tier = 'high') {
   if (t === 'low') {
     return new THREE.MeshStandardMaterial({
       color: colorHex,
-      roughness: isMetal ? 0.30 : (isMatte ? 0.54 : 0.42),
-      metalness: isMetal ? 0.82 : 0.06
+      vertexColors: true,
+      roughness: isMetal ? 0.28 : (isMatte ? 0.52 : 0.38),
+      metalness: isMetal ? 0.84 : 0.08
     });
   }
 
@@ -383,31 +650,34 @@ export function newPieceMaterial(colorHex, theme, tier = 'high') {
   if (isMetal) {
     return new THREE.MeshStandardMaterial({
       color: colorHex,
-      roughness: 0.24,
-      metalness: 0.88,
+      vertexColors: true,
+      roughness: 0.22,
+      metalness: 0.90,
       ...texMaps,
-      bumpScale: tex ? 0.004 : 0
+      bumpScale: tex ? 0.0065 : 0
     });
   }
 
   if (isMatte) {
     return new THREE.MeshStandardMaterial({
       color: colorHex,
-      roughness: 0.52,
-      metalness: 0.02,
+      vertexColors: true,
+      roughness: 0.48,
+      metalness: 0.04,
       ...texMaps,
-      bumpScale: tex ? 0.002 : 0
+      bumpScale: tex ? 0.0035 : 0
     });
   }
 
   return new THREE.MeshPhysicalMaterial({
     color: colorHex,
-    roughness: texKind === 'ivory' ? 0.26 : 0.32,
-    metalness: 0.05,
-    clearcoat: t === 'high' ? 0.65 : 0.40,
-    clearcoatRoughness: texKind === 'ivory' ? 0.18 : 0.22,
+    vertexColors: true,
+    roughness: texKind === 'ivory' ? 0.22 : 0.28,
+    metalness: 0.06,
+    clearcoat: t === 'high' ? 0.78 : 0.48,
+    clearcoatRoughness: texKind === 'ivory' ? 0.14 : 0.18,
     ...texMaps,
-    bumpScale: tex ? (texKind === 'ivory' ? 0.0025 : 0.005) : 0
+    bumpScale: tex ? (texKind === 'ivory' ? 0.0045 : 0.0085) : 0
   });
 }
 
@@ -419,7 +689,6 @@ export function createPieceMesh(type, color, geos, theme, tier = 'high') {
   const mesh = new THREE.Mesh(geos[type], mat);
   mesh.castShadow = t !== 'low';
   mesh.receiveShadow = t !== 'low';
-  /* Pretas olham para o lado oposto (importante para o Cavalo) */
   if (type === 'n' && color === 'b') mesh.rotation.y = Math.PI;
   return mesh;
 }

@@ -219,4 +219,29 @@ test('detecção de afogamento funciona em ply > 1 e dentro da quiescence search
   assert.ok(qAfterRxc6.evalCp > -1000, `Expected qsearch to reject 1...bxc6 stalemate (0), got ${qAfterRxc6.evalCp}`);
 });
 
+test('createChessGeometries gera malhas Staunton Championship com UVs, vertex color AO/feltro e LOD (high > medium > low)', async () => {
+  const { createChessGeometries, disposeChessGeometries } = await import('../src/engine/pieces3d.js');
+  const gHigh = createChessGeometries('high');
+  const gMed = createChessGeometries('medium');
+  const gLow = createChessGeometries('low');
+
+  for (const k of ['p', 'r', 'n', 'b', 'q', 'k']) {
+    for (const set of [gHigh, gMed, gLow]) {
+      const geo = set[k];
+      assert.ok(geo, `Missing geometry ${k}`);
+      assert.ok(geo.attributes.position.count > 100);
+      assert.equal(geo.attributes.normal.count, geo.attributes.position.count);
+      assert.equal(geo.attributes.uv.count, geo.attributes.position.count);
+      assert.equal(geo.attributes.color.count, geo.attributes.position.count);
+    }
+    assert.ok(gHigh[k].attributes.position.count > gMed[k].attributes.position.count, `Expected high > medium verts for ${k}`);
+    assert.ok(gMed[k].attributes.position.count > gLow[k].attributes.position.count, `Expected medium > low verts for ${k}`);
+  }
+
+  disposeChessGeometries(gHigh);
+  disposeChessGeometries(gMed);
+  disposeChessGeometries(gLow);
+});
+
+
 
