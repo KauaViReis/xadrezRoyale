@@ -21,6 +21,7 @@ import { createChessGeometries, makeChessPiece, applyPieceTheme as applyPieceThe
 import { FXManager } from './engine/fx.js';
 import { CameraController } from './engine/camera.js';
 import { OnlineManager, isFirebaseConfigured } from './online/firebase.js';
+import { getStockfishHint } from './workers/stockfish-hint.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -966,7 +967,10 @@ $('#btnHint').onclick = async () => {
   const prevHtml = btn.innerHTML;
   btn.innerHTML = '⏳ <span>PENSANDO</span>';
   try {
-    const res = await askWorker('bestMove', { fen: reqFen, depth: 3 });
+    let res = await getStockfishHint(reqFen, { depth: 14, movetime: 950 });
+    if (!res.ok) {
+      res = await askWorker('bestMove', { fen: reqFen, depth: 3 });
+    }
     if (!res.ok || !res.move || chess.fen() !== reqFen) return;
     const moving = chess.get(res.move.from);
     const pv = Array.isArray(res.move.pv) && res.move.pv.length
@@ -981,7 +985,8 @@ $('#btnHint').onclick = async () => {
       pv
     });
     const pvLine = pv.slice(0, 4).map(m => m.san || `${m.from}-${m.to}`).join(' ');
-    $('#hintBannerTxt').innerHTML = `<strong>Dica: ${res.move.san}</strong> · ${pvLine}`;
+    const tag = res.engine === 'stockfish-19' ? 'Dica Stockfish' : 'Dica';
+    $('#hintBannerTxt').innerHTML = `<strong>${tag}: ${res.move.san}</strong> · ${pvLine}`;
     const hb = $('#hintBanner');
     hb.classList.remove('hide');
     hb.style.display = 'flex';
