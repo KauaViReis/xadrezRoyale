@@ -19,7 +19,8 @@ import { createScene } from './engine/scene.js';
 import { createBoard, applyBoardMaterialTextures, worldPos } from './engine/board3d.js';
 import {
   createChessGeometriesByStyle, makeChessPiece, applyPieceTheme as applyPieceTheme3D,
-  setPieceQuality, animatePieceMove, animateKingTopple, animatePiecesIntro
+  setPieceQuality, setPieceHighlight, disposePieceObject, isGroupPieceStyle,
+  animatePieceMove, animateKingTopple, animatePiecesIntro
 } from './engine/pieces3d.js';
 import { FXManager } from './engine/fx.js';
 import { CameraController } from './engine/camera.js';
@@ -209,7 +210,10 @@ function applyPieceTheme(i) {
 function applyPieceStyle(nextStyle) {
   pieceStyle = nextStyle || 'staunton';
   const th = PIECE_THEMES[pieceThemeIdx] || PIECE_THEMES[0];
-  setPieceQuality(qualityTier, { pieceMeshes, capturedMeshes, geos, theme: th, style: pieceStyle });
+  if (!isGroupPieceStyle(pieceStyle)) {
+    setPieceQuality(qualityTier, { pieceMeshes, capturedMeshes, geos, theme: th, style: pieceStyle });
+  }
+  rebuildBoardPieces();
   fx.setHintAssets(geos, th);
   savePrefs();
 }
@@ -218,11 +222,11 @@ function applyPieceStyle(nextStyle) {
 function clearAllPieces() {
   for (const p of pieceMeshes) {
     scene.remove(p.mesh);
-    if (p.mesh.material) p.mesh.material.dispose();
+    disposePieceObject(p.mesh);
   }
   for (const m of capturedMeshes) {
     scene.remove(m);
-    if (m.material) m.material.dispose();
+    disposePieceObject(m);
   }
   pieceMeshes = [];
   capturedMeshes = [];
@@ -252,7 +256,7 @@ function rebuildBoardPieces(boardMatrix = chess.board()) {
   const prevCaptured = [...capturedMeshes];
   for (const p of pieceMeshes) {
     scene.remove(p.mesh);
-    if (p.mesh.material) p.mesh.material.dispose();
+    disposePieceObject(p.mesh);
   }
   pieceMeshes = [];
   grid = Array.from({ length: 8 }, () => Array(8).fill(null));
@@ -456,8 +460,7 @@ function deselect() {
     const p = grid[r][c];
     if (p) {
       p.mesh.position.y = 0;
-      p.mesh.material.emissive.set(0x000000);
-      p.mesh.material.emissiveIntensity = 0;
+      setPieceHighlight(p.mesh, 0x000000, 0);
     }
   }
   selectedSq = null;
@@ -481,8 +484,7 @@ function selectSquare(sq) {
     deselect();
     selectedSq = sq;
     p.mesh.position.y = 0.14;
-    p.mesh.material.emissive.set(0x3B82F6);
-    p.mesh.material.emissiveIntensity = 0.38;
+    setPieceHighlight(p.mesh, 0x3B82F6, 0.38);
     const b = chess.board();
     for (let tr = 0; tr < 8; tr++) {
       for (let tc = 0; tc < 8; tc++) {
@@ -504,8 +506,7 @@ function selectSquare(sq) {
   selectedSq = sq;
   legalFromSelected = moves;
   p.mesh.position.y = 0.14;
-  p.mesh.material.emissive.set(0xC99A3E);
-  p.mesh.material.emissiveIntensity = 0.35;
+  setPieceHighlight(p.mesh, 0xC99A3E, 0.35);
   for (const m of moves) {
     const to = squareToRC(m.to);
     fx.addMoveDot(to.r, to.c, Boolean(m.captured));
@@ -551,7 +552,7 @@ async function executeMove(moveInput, isRemote = false) {
       grid[capR][capC] = null;
       scene.remove(victim.mesh);
       pieceMeshes = pieceMeshes.filter(x => x !== victim);
-      if (victim.mesh.material) victim.mesh.material.dispose();
+      disposePieceObject(victim.mesh);
       addCapturedToken(victim.type, victim.color);
       fx.spawnParticles(capR, capC, PIECE_THEMES[pieceThemeIdx][victim.color]);
     }
@@ -582,7 +583,16 @@ async function executeMove(moveInput, isRemote = false) {
 
   if (move.promotion) {
     piece.type = move.promotion;
-    piece.mesh.geometry = geos[move.promotion];
+    if (piece.mesh.isGroup) {
+      scene.remove(piece.mesh);
+      disposePieceObject(piece.mesh);
+      const nextP = makeChessPiece(scene, geos, move.promotion, piece.color, toRC.r, toRC.c, PIECE_THEMES[pieceThemeIdx], qualityTier, pieceStyle);
+      piece.mesh = nextP.mesh;
+      piece.mesh.userData.piece = piece;
+      piece.mesh.traverse(ch => { ch.userData.piece = piece; });
+    } else {
+      piece.mesh.geometry = geos[move.promotion];
+    }
     audio.promote();
     fx.spawnParticles(toRC.r, toRC.c, 0xC99A3E, 18);
   }
@@ -882,13 +892,13 @@ cam.onTap = async (cx, cy) => {
   ptr.y = -((cy - rect.top) / rect.height) * 2 + 1;
   ray.setFromCamera(ptr, camera);
 
-  const pieceHits = ray.intersectObjects(pieceMeshes.map(p => p.mesh), false);
+  const pieceHits = ray.intersectObjects(pieceMeshes.map(p => p.mesh), true);
   const sqHits = ray.intersectObjects(squares, false);
 
   let hitSq = null;
   if (pieceHits.length) {
     const p = pieceHits[0].object.userData.piece;
-    hitSq = rcToSquare(p.r, p.c);
+    if (p) hitSq = rcToSquare(p.r, p.c);
   } else if (sqHits.length) {
     const { r, c } = sqHits[0].object.userData;
     hitSq = rcToSquare(r, c);
@@ -959,7 +969,7 @@ if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
     ptr.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     ray.setFromCamera(ptr, camera);
     const activeColor = mode === 'online' ? myColor : chess.turn();
-    const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === activeColor).map(p => p.mesh), false);
+    const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === activeColor).map(p => p.mesh), true);
     const next = hits.length ? hits[0].object.userData.piece : null;
     if (hoveredPiece && hoveredPiece !== next && rcToSquare(hoveredPiece.r, hoveredPiece.c) !== selectedSq) {
       hoveredPiece.mesh.position.y = 0;

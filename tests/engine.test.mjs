@@ -333,3 +333,19 @@ test('MUSIC_STATIONS e VoiceNarrator funcionam com segurança no Node.js', async
   assert.equal(vn.lastOpeningSpoken, null);
 });
 
+test('Coleções 3D Marvel, DC, Marvel×DC e Medieval constroem grupos 3D válidos para todas as 6 peças', async () => {
+  const { createPieceMesh, disposePieceObject, setPieceHighlight } = await import('../src/engine/pieces3d.js');
+  for (const style of ['medieval', 'marvel_heroes', 'dc_heroes', 'marvel_vs_dc']) {
+    for (const color of ['w', 'b']) {
+      for (const type of ['p', 'r', 'n', 'b', 'q', 'k']) {
+        const obj = createPieceMesh(type, color, {}, null, 'high', style);
+        assert.ok(obj.isGroup, `Expected THREE.Group for ${style}/${color}/${type}`);
+        assert.ok(obj.children.length >= 3);
+        setPieceHighlight(obj, 0xC99A3E, 0.35);
+        disposePieceObject(obj);
+      }
+    }
+  }
+});
+
+

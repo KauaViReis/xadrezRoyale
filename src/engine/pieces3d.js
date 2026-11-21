@@ -8,6 +8,9 @@ import * as THREE from 'three';
 import { worldPos } from './board3d.js';
 import { PIECE_THEMES } from './themes.js';
 import { tween, easeIO } from '../core/utils.js';
+import { isGroupPieceStyle, createGroupPieceObject } from './hero-pieces3d.js';
+
+export { isGroupPieceStyle };
 
 const _pieceTexCache = new Map();
 
@@ -838,9 +841,40 @@ export function newPieceMaterial(colorHex, theme, tier = 'high', style = 'staunt
   });
 }
 
+export function setPieceHighlight(obj, hex = null, intensity = 0) {
+  if (!obj) return;
+  if (obj.isMesh && obj.material && obj.material.emissive) {
+    if (hex !== null) obj.material.emissive.set(hex);
+    obj.material.emissiveIntensity = intensity;
+  } else if (obj.isGroup) {
+    // Highlight only the pedestal disc (first child) so hero colors stay crisp
+    const base = obj.children[0];
+    if (base && base.material && base.material.emissive) {
+      if (hex !== null) base.material.emissive.set(hex);
+      base.material.emissiveIntensity = intensity;
+    }
+  }
+}
+
+export function disposePieceObject(obj) {
+  if (!obj) return;
+  if (obj.isMesh) {
+    if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+  } else if (obj.isGroup) {
+    // Only dispose non-shared pedestal/accent materials on the root group (hero cached mats stay cached)
+    const base = obj.children[0];
+    const ring = obj.children[1];
+    if (base?.material?.dispose) base.material.dispose();
+    if (ring?.material?.dispose) ring.material.dispose();
+  }
+}
+
 export function createPieceMesh(type, color, geos, theme, tier = 'high', style = 'staunton') {
   const t = normalizeTier(tier);
   const resolvedTheme = theme || PIECE_THEMES[0];
+  if (isGroupPieceStyle(style)) {
+    return createGroupPieceObject(type, color, style, resolvedTheme, t);
+  }
   const colorHex = color === 'w' ? resolvedTheme.w : resolvedTheme.b;
   const mat = newPieceMaterial(colorHex, resolvedTheme, t, style, color);
   const mesh = new THREE.Mesh(geos[type], mat);
@@ -857,6 +891,11 @@ export function makeChessPiece(scene, geos, type, color, r, c, theme, tier = 'hi
   scene.add(mesh);
   const piece = { mesh, type, color, r, c };
   mesh.userData.piece = piece;
+  if (mesh.isGroup) {
+    mesh.traverse(child => {
+      child.userData.piece = piece;
+    });
+  }
   return piece;
 }
 
@@ -880,6 +919,15 @@ export function applyPieceTheme(theme, tier = 'high', ctx = {}) {
     const pieceInfo = mesh.userData?.piece;
     const color = pieceInfo?.color || 'w';
     const colorHex = color === 'w' ? resolvedTheme.w : resolvedTheme.b;
+
+    if (mesh.isGroup) {
+      const base = mesh.children[0];
+      if (base && base.material && base.material.color) {
+        base.material.color.setHex(colorHex);
+      }
+      continue;
+    }
+
     const oldMat = mesh.material;
     const nextMat = newPieceMaterial(colorHex, resolvedTheme, t, style, color);
 
@@ -899,23 +947,29 @@ export function setPieceQuality(tier, ctx = {}) {
   const { all, captured } = resolveMeshList(ctx);
   const theme = ctx.theme || ctx.pieceTheme || PIECE_THEMES[0];
 
-  if (all.length > 0) {
+  if (all.length > 0 && !isGroupPieceStyle(style)) {
     applyPieceTheme(theme, t, { ...ctx, style });
   }
 
   for (const mesh of all) {
-    mesh.castShadow = t !== 'low';
-    mesh.receiveShadow = t !== 'low';
+    if (mesh.isGroup) {
+      mesh.traverse(ch => { if (ch.isMesh) { ch.castShadow = t !== 'low'; ch.receiveShadow = t !== 'low'; } });
+    } else {
+      mesh.castShadow = t !== 'low';
+      mesh.receiveShadow = t !== 'low';
+    }
   }
   for (const mesh of captured) {
     mesh.visible = t !== 'low';
   }
 
-  if (ctx.geos) {
+  if (ctx.geos && !isGroupPieceStyle(style)) {
     const newGeos = createChessGeometriesByStyle(t, style);
     for (const mesh of all) {
-      const pType = mesh.userData?.piece?.type;
-      if (pType && newGeos[pType]) mesh.geometry = newGeos[pType];
+      if (mesh.isMesh) {
+        const pType = mesh.userData?.piece?.type;
+        if (pType && newGeos[pType]) mesh.geometry = newGeos[pType];
+      }
     }
     disposeChessGeometries(ctx.geos);
     Object.assign(ctx.geos, newGeos);
