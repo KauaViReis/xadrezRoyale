@@ -75,6 +75,12 @@ export function createScene(canvas) {
     fillet:  new THREE.MeshStandardMaterial({ color: 0xC99A3E, metalness: 0.78, roughness: 0.32, envMapIntensity: 0.45 })
   };
 
+  function setExposure(val) {
+    const clamped = Math.max(0.65, Math.min(1.20, Number(val) || 0.94));
+    renderer.toneMappingExposure = clamped;
+    return clamped;
+  }
+
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
     renderer.setSize(w, h, false);
@@ -82,5 +88,5 @@ export function createScene(canvas) {
     camera.updateProjectionMatrix();
   }
 
-  return { scene, camera, renderer, materials, lights: { hemi, sun, fill, rim }, qualityTier, resize, setLightingMode };
+  return { scene, camera, renderer, materials, lights: { hemi, sun, fill, rim }, qualityTier, resize, setLightingMode, setExposure };
 }

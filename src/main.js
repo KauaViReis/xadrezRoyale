@@ -109,6 +109,7 @@ function savePrefs() {
       music: audio.musicEnabled,
       musicStyle: audio.musicStyle,
       narrator: narrator.enabled,
+      exposure: Number($('#rngExposure')?.value) || 0.94,
       nick
     }));
   } catch { /* noop */ }
@@ -116,8 +117,9 @@ function savePrefs() {
 
 /* ============ CENA 3D & ADAPTIVE QUALITY ============ */
 const canvas = $('#c3d');
-const { scene, camera, renderer, materials, lights, qualityTier: initTier, resize, setLightingMode } = createScene(canvas);
+const { scene, camera, renderer, materials, lights, qualityTier: initTier, resize, setLightingMode, setExposure } = createScene(canvas);
 setLightingMode(lightingMode);
+if (prefs.exposure) setExposure(prefs.exposure);
 let qualityTier = initTier;
 const boardCtx = createBoard(scene, materials, qualityTier);
 const { squares } = boardCtx;
@@ -1724,12 +1726,27 @@ bindSeg('#segEval', v => { evalVisible = v === '1'; savePrefs(); refreshEval(); 
 bindSeg('#segPieceStyle', v => { applyPieceStyle(v); });
 document.querySelectorAll('#segPieceStyle .seg').forEach(b => b.classList.toggle('active', b.dataset.val === pieceStyle));
 
-/* Iluminação de Estúdio (Escuro / Penumbra / Estúdio) */
+/* Iluminação de Estúdio (Escuro / Penumbra / Estúdio) + Slider de Exposição 3D */
+const rngExp = $('#rngExposure');
+const syncExposureUI = val => {
+  const v = setExposure(val);
+  previewStudio?.setExposure(v);
+  if (rngExp) rngExp.value = String(v.toFixed(2));
+  if ($('#exposureValTxt')) $('#exposureValTxt').textContent = `${Math.round(v * 100)}%`;
+};
 bindSeg('#segLighting', v => {
   lightingMode = setLightingMode(v);
+  syncExposureUI(renderer.toneMappingExposure);
   savePrefs();
 });
 document.querySelectorAll('#segLighting .seg').forEach(b => b.classList.toggle('active', b.dataset.val === lightingMode));
+if (rngExp) {
+  syncExposureUI(prefs.exposure || renderer.toneMappingExposure);
+  rngExp.oninput = () => {
+    syncExposureUI(Number(rngExp.value));
+    savePrefs();
+  };
+}
 
 let manualQualityMode = 'auto';
 bindSeg('#segQuality', v => {
@@ -2318,7 +2335,8 @@ $('#btnShareResult').onclick = async () => {
 window.addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (e.key === 'Escape') {
-    for (const id of ['settingsOverlay', 'lbOverlay', 'tvOverlay', 'socialOverlay', 'profileOverlay', 'promoModal']) {
+    closeSettingsStudio();
+    for (const id of ['lbOverlay', 'tvOverlay', 'socialOverlay', 'profileOverlay', 'towerOverlay', 'promoModal']) {
       $(`#${id}`)?.classList.add('hide');
     }
     if (premove) clearPremove();
@@ -2334,6 +2352,18 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'Home') $('#btnHistFirst').click();
   else if (e.key === 'End') $('#btnHistLast').click();
 });
+
+/* Fechar modais secundários ao clicar fora (backdrop) */
+for (const ovId of ['settingsOverlay', 'profileOverlay', 'towerOverlay', 'tvOverlay']) {
+  const ov = $(`#${ovId}`);
+  if (ov) {
+    ov.addEventListener('click', e => {
+      if (e.target !== ov) return;
+      if (ovId === 'settingsOverlay') closeSettingsStudio();
+      else ov.classList.add('hide');
+    });
+  }
+}
 
 /* Swatches de temas */
 BOARD_THEMES.forEach((t, i) => {

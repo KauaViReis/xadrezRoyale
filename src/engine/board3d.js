@@ -488,16 +488,77 @@ export function createBoard(scene, materials, tier = 'high') {
     setQuality(nextTier || currentTier, resolved);
   }
 
+  let activeCollapseToken = 0;
   function setCollapsedRings(collapsedRings = 0) {
+    activeCollapseToken++;
+    const token = activeCollapseToken;
+
+    if (collapsedRings <= 0) {
+      for (const sq of squares) {
+        sq.position.y = -0.04;
+        sq.rotation.set(0, 0, 0);
+        sq.scale.setScalar(1);
+        sq.visible = true;
+        sq.userData.collapsed = false;
+      }
+      return;
+    }
+
+    const falling = [];
     for (const sq of squares) {
       const { r, c } = sq.userData;
       const out1 = r === 0 || r === 7 || c === 0 || c === 7;
       const out2 = r <= 1 || r >= 6 || c <= 1 || c >= 6;
-      const collapsed = (collapsedRings >= 1 && out1) || (collapsedRings >= 2 && out2);
-      sq.position.y = collapsed ? -1.45 : -0.04;
-      sq.scale.setScalar(collapsed ? 0.72 : 1);
-      sq.visible = !collapsed;
+      const shouldCollapse = (collapsedRings >= 1 && out1) || (collapsedRings >= 2 && out2);
+      if (shouldCollapse && !sq.userData.collapsed) {
+        sq.userData.collapsed = true;
+        const delayMs = ((r + c) % 6) * 28;
+        const rotDirX = (r < 4 ? -1 : 1) * (0.4 + Math.random() * 0.45);
+        const rotDirZ = (c < 4 ? 1 : -1) * (0.4 + Math.random() * 0.45);
+        falling.push({ sq, delayMs, rotDirX, rotDirZ });
+      } else if (!shouldCollapse) {
+        sq.position.y = -0.04;
+        sq.rotation.set(0, 0, 0);
+        sq.scale.setScalar(1);
+        sq.visible = true;
+        sq.userData.collapsed = false;
+      }
     }
+
+    if (!falling.length || typeof requestAnimationFrame !== 'function') {
+      for (const item of falling) {
+        item.sq.position.y = -1.65;
+        item.sq.visible = false;
+      }
+      return;
+    }
+
+    const startTime = performance.now();
+    const duration = 460;
+    function step(now) {
+      if (token !== activeCollapseToken) return;
+      let anyAlive = false;
+      for (const item of falling) {
+        const elapsed = now - startTime - item.delayMs;
+        if (elapsed < 0) {
+          anyAlive = true;
+          continue;
+        }
+        const k = Math.min(1, elapsed / duration);
+        const grav = k * k;
+        item.sq.position.y = -0.04 - grav * 2.1;
+        item.sq.rotation.x = grav * item.rotDirX;
+        item.sq.rotation.z = grav * item.rotDirZ;
+        item.sq.scale.setScalar(1 - grav * 0.32);
+        if (k >= 1) {
+          item.sq.visible = false;
+        } else {
+          anyAlive = true;
+        }
+      }
+      if (anyAlive) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
   }
 
   function dispose() {

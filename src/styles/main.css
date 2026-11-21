@@ -1024,4 +1024,36 @@ button:focus-visible, input:focus-visible {
   .tower-reward-grid { grid-template-columns: 1fr; }
 }
 
+.exposure-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.exposure-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+@media (max-width: 520px) {
+  .royale-hud-bar {
+    bottom: 62px;
+    padding: 5px 8px;
+    gap: 5px;
+    max-width: calc(100vw - 16px);
+  }
+  .royale-zone-badge {
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+  .hero-power-group {
+    gap: 4px;
+  }
+  .power-btn {
+    padding: 4px 7px;
+    font-size: 10px;
+  }
+}
+
+
 

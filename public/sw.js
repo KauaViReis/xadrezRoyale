@@ -1,4 +1,4 @@
-const CACHE = 'xadrez-royale-v2';
+const CACHE = 'xadrez-royale-v3';
 const PRECACHE = [
   '/',
   '/index.html',

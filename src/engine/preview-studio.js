@@ -84,6 +84,12 @@ export class PiecePreviewStudio {
     loop();
   }
 
+  setExposure(val) {
+    const clamped = Math.max(0.65, Math.min(1.20, Number(val) || 0.94));
+    this.renderer.toneMappingExposure = clamped;
+    this.renderer.render(this.scene, this.camera);
+  }
+
   stop() {
     this._running = false;
     if (this._raf) {
