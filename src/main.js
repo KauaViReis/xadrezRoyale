@@ -30,6 +30,7 @@ import { detectOpening } from './core/openings.js';
 import { BOT_PROFILES, getBotById, getLeague, ACHIEVEMENTS, evaluateMatchAchievements } from './core/meta.js';
 import { TACTICAL_PUZZLES, computeMaterialBalance } from './core/puzzles.js';
 import { VoiceNarrator } from './core/narrator.js';
+import { PiecePreviewStudio } from './engine/preview-studio.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -198,12 +199,22 @@ function applyBoardTheme(i) {
   savePrefs();
 }
 
+let previewStudio = null;
+let previewType = 'k';
+let previewColor = 'w';
+
+function refreshPreviewStudio() {
+  if (!previewStudio) return;
+  previewStudio.updatePiece(previewType, previewColor, geos, PIECE_THEMES[pieceThemeIdx] || PIECE_THEMES[0], pieceStyle);
+}
+
 function applyPieceTheme(i) {
   pieceThemeIdx = i;
   const th = PIECE_THEMES[i] || PIECE_THEMES[0];
   applyPieceTheme3D(th, qualityTier, { pieceMeshes, capturedMeshes, geos, style: pieceStyle });
   fx.setHintAssets(geos, th);
   document.querySelectorAll('#pieceSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
+  refreshPreviewStudio();
   savePrefs();
 }
 
@@ -215,6 +226,7 @@ function applyPieceStyle(nextStyle) {
   }
   rebuildBoardPieces();
   fx.setHintAssets(geos, th);
+  refreshPreviewStudio();
   savePrefs();
 }
 
@@ -1425,8 +1437,21 @@ $('#btnSound').onclick = () => {
   $('#btnSound').setAttribute('aria-pressed', String(audio.muted));
   savePrefs();
 };
-$('#btnSettings').onclick = () => $('#settingsOverlay').classList.remove('hide');
-$('#btnCloseSettings').onclick = () => $('#settingsOverlay').classList.add('hide');
+bindSeg('#segPreviewType', v => { previewType = v; refreshPreviewStudio(); });
+bindSeg('#segPreviewColor', v => { previewColor = v; refreshPreviewStudio(); });
+$('#btnSettings').onclick = () => {
+  $('#settingsOverlay').classList.remove('hide');
+  const pCanvas = $('#piecePreviewCanvas');
+  if (pCanvas && !previewStudio) {
+    try { previewStudio = new PiecePreviewStudio(pCanvas); } catch { /* noop */ }
+  }
+  refreshPreviewStudio();
+  previewStudio?.start();
+};
+$('#btnCloseSettings').onclick = () => {
+  $('#settingsOverlay').classList.add('hide');
+  previewStudio?.stop();
+};
 $('#btnHistoryToggle').onclick = () => $('#historyBox').classList.toggle('open');
 
 $('#btnHistFirst').onclick = () => goToPly(0);

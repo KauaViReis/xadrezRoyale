@@ -463,3 +463,28 @@ button:focus-visible, input:focus-visible {
   color: var(--gold);
   padding: 0 6px;
 }
+
+/* ============ SPRINT 2: ESTÚDIO DE PREVIEW 3D AO VIVO ============ */
+.preview-studio-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(10, 9, 8, 0.72);
+  border: 1px solid rgba(201, 154, 62, 0.32);
+  margin-bottom: 10px;
+}
+#piecePreviewCanvas {
+  width: 240px;
+  height: 170px;
+  border-radius: 8px;
+  display: block;
+}
+.preview-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
