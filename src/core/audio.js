@@ -4,10 +4,12 @@
    ============================================================ */
 
 export const MUSIC_STATIONS = [
-  { id: 'imperial', name: '🏛️ Imperial',  desc: 'Pad clássico suave de salão real' },
-  { id: 'vice',     name: '🌴 Vice 80s',  desc: 'Synthwave GTA VI com arpejo neon' },
-  { id: 'lofi',     name: '☕ Lo-Fi Club', desc: 'Acordes jazzísticos relaxantes' },
-  { id: 'tension',  name: '⚔️ Tensão GM', desc: 'Pulso cinematográfico de torneio' }
+  { id: 'imperial', name: '🏛️ Imperial',    desc: 'Pad clássico suave de salão real' },
+  { id: 'vice',     name: '🌴 Vice 80s',    desc: 'Synthwave GTA VI com arpejo neon' },
+  { id: 'lofi',     name: '☕ Lo-Fi Club',   desc: 'Acordes jazzísticos relaxantes' },
+  { id: 'tension',  name: '⚔️ Tensão GM',   desc: 'Pulso cinematográfico de torneio' },
+  { id: 'gotham',   name: '🦇 Gotham Noir', desc: 'Suspense sombrio com eco cinematográfico' },
+  { id: 'heroes',   name: '⚡ Heróis',       desc: 'Marcha épica heroica com metais synth' }
 ];
 
 export class AudioManager {
@@ -63,9 +65,24 @@ export class AudioManager {
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(this.musicStyle === 'vice' ? 1450 : 880, ctx.currentTime);
+    const cutoff = this.musicStyle === 'vice' || this.musicStyle === 'heroes' ? 1550 : (this.musicStyle === 'gotham' ? 860 : 1120);
+    filter.frequency.setValueAtTime(cutoff, ctx.currentTime);
+
+    /* Barramento de Eco / Delay Estéreo para ambiência cinematográfica */
+    const delay = ctx.createDelay(1.0);
+    delay.delayTime.setValueAtTime(this.musicStyle === 'gotham' ? 0.44 : 0.34, ctx.currentTime);
+    const feedback = ctx.createGain();
+    feedback.gain.setValueAtTime(this.musicStyle === 'gotham' ? 0.36 : 0.26, ctx.currentTime);
+    const wet = ctx.createGain();
+    wet.gain.setValueAtTime(0.32, ctx.currentTime);
+
     this._musicMaster.connect(filter);
     filter.connect(ctx.destination);
+    filter.connect(delay);
+    delay.connect(feedback);
+    feedback.connect(delay);
+    delay.connect(wet);
+    wet.connect(ctx.destination);
 
     const playNote = (freq, dur, type, amp, attack = 0.04) => {
       if (!this.musicPlaying || !this._musicMaster) return;
@@ -84,7 +101,6 @@ export class AudioManager {
     };
 
     if (this.musicStyle === 'vice') {
-      /* Vice Synthwave 80s (GTA VI): baixo arpejado pulsante + pad neon */
       const bassLine = [110, 110, 130.81, 146.83, 164.81, 146.83, 130.81, 98.0];
       const pads = [
         [220.0, 261.63, 329.63],
@@ -105,8 +121,65 @@ export class AudioManager {
       };
       step();
       this._musicTimer = setInterval(step, 380);
+    } else if (this.musicStyle === 'gotham') {
+      /* Sombras de Gotham (Suspense Noir em Dó Menor) */
+      const steps = [
+        { bass: 65.41, pad: [130.81, 155.56, 196.0], lead: 392.0 },
+        {},
+        { lead: 311.13 },
+        {},
+        { bass: 103.83, pad: [155.56, 207.65, 261.63], lead: 415.3 },
+        {},
+        { lead: 392.0 },
+        {},
+        { bass: 87.31, pad: [130.81, 174.61, 207.65], lead: 349.23 },
+        {},
+        { lead: 311.13 },
+        {},
+        { bass: 98.0, pad: [146.83, 196.0, 246.94], lead: 293.66 },
+        { lead: 311.13 },
+        { lead: 293.66 },
+        {}
+      ];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const st = steps[this._stepIdx++ % steps.length];
+        if (st.bass) playNote(st.bass, 1.8, 'triangle', 0.28, 0.06);
+        if (st.pad) st.pad.forEach(f => playNote(f, 2.2, 'sine', 0.11, 0.35));
+        if (st.lead) playNote(st.lead, 0.9, 'sine', 0.15, 0.04);
+      };
+      step();
+      this._musicTimer = setInterval(step, 520);
+    } else if (this.musicStyle === 'heroes') {
+      /* Marcha dos Heróis (Épico em Ré Menor) */
+      const steps = [
+        { bass: 73.42, lead: 293.66, pad: [146.83, 220.0] },
+        { bass: 73.42 },
+        { bass: 73.42, lead: 440.0 },
+        { bass: 110.0, lead: 392.0 },
+        { bass: 116.54, lead: 349.23, pad: [116.54, 174.61, 233.08] },
+        { bass: 116.54 },
+        { bass: 130.81, lead: 392.0, pad: [130.81, 196.0, 261.63] },
+        { lead: 440.0 },
+        { bass: 73.42, lead: 587.33, pad: [146.83, 220.0] },
+        { bass: 73.42 },
+        { bass: 73.42, lead: 523.25 },
+        { lead: 440.0 },
+        { bass: 103.83, lead: 392.0, pad: [130.81, 196.0] },
+        { lead: 349.23 },
+        { bass: 110.0, lead: 329.63, pad: [110.0, 164.81, 220.0] },
+        { lead: 392.0 }
+      ];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const st = steps[this._stepIdx++ % steps.length];
+        if (st.bass) playNote(st.bass, 0.35, 'sawtooth', 0.24, 0.015);
+        if (st.pad) st.pad.forEach(f => playNote(f, 1.4, 'triangle', 0.12, 0.18));
+        if (st.lead) playNote(st.lead, 0.55, 'sawtooth', 0.14, 0.02);
+      };
+      step();
+      this._musicTimer = setInterval(step, 350);
     } else if (this.musicStyle === 'lofi') {
-      /* Lo-Fi Chess Club: acordes jazzísticos quentes + melodia suave */
       const chords = [
         [146.83, 220.0, 261.63, 329.63],
         [196.0, 246.94, 329.63, 392.0],
@@ -127,7 +200,6 @@ export class AudioManager {
       step();
       this._musicTimer = setInterval(step, 680);
     } else if (this.musicStyle === 'tension') {
-      /* Tensão de Grande Mestre: pulso grave orquestral + notas agudas esparsas */
       const pulse = [73.42, 73.42, 87.31, 73.42, 82.41, 73.42, 98.0, 65.41];
       const step = () => {
         if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
@@ -140,7 +212,6 @@ export class AudioManager {
       step();
       this._musicTimer = setInterval(step, 520);
     } else {
-      /* Clássico Imperial (Ambient Pad original) */
       const chords = [
         [146.83, 261.63, 329.63, 440.00],
         [98.00,  246.94, 329.63, 392.00],

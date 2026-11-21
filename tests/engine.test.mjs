@@ -319,10 +319,12 @@ test('createChessGeometriesByStyle gera skins 3D Staunton, Cristal e Cyber Neon 
 test('MUSIC_STATIONS e VoiceNarrator funcionam com segurança no Node.js', async () => {
   const { AudioManager, MUSIC_STATIONS } = await import('../src/core/audio.js');
   const { VoiceNarrator } = await import('../src/core/narrator.js');
-  assert.equal(MUSIC_STATIONS.length, 4);
+  assert.equal(MUSIC_STATIONS.length, 6);
   const am = new AudioManager();
-  am.setMusicStyle('vice');
-  assert.equal(am.musicStyle, 'vice');
+  am.setMusicStyle('gotham');
+  assert.equal(am.musicStyle, 'gotham');
+  am.setMusicStyle('heroes');
+  assert.equal(am.musicStyle, 'heroes');
   am.setMusicStyle('invalido');
   assert.equal(am.musicStyle, 'imperial');
 
