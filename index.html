@@ -6,6 +6,9 @@
   <title>XADREZ ROYALE — Xadrez 3D Online</title>
   <meta name="description" content="Xadrez Royale: jogo de xadrez 3D com regras oficiais FIDE, IA em Web Worker, rating Elo, modos Bullet/Blitz/Rápida e visual editorial.">
   <meta name="theme-color" content="#0E0D0B">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <link rel="apple-touch-icon" href="/icon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -17,7 +20,7 @@
   <!-- TOPO -->
   <header class="hud-top">
     <button type="button" class="brand-chip panel-glass" id="btnHome" aria-label="Abrir menu principal">
-      <span class="brand-mark">♔</span>
+      <img src="/icon.svg" alt="" class="brand-logo" width="22" height="22">
       <span class="brand-name">XADREZ ROYALE</span>
     </button>
 
@@ -80,6 +83,7 @@
       <span class="hist-head">LANCES</span>
       <button type="button" class="hist-live-badge hide" id="liveBanner" style="display:none">Voltar ao vivo</button>
     </div>
+    <div class="opening-badge" id="openingBadge" style="display:none"></div>
     <div class="analysis-panel" id="analysisPanel" style="display:none">
       <div class="analysis-summary" id="analysisSummary"></div>
       <svg class="eval-graph" id="evalGraph" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
@@ -116,6 +120,13 @@
     <button type="button" class="mini-btn" id="btnDrawNo">Recusar</button>
   </div>
 
+  <!-- BARRA DE DESAFIO RECEBIDO -->
+  <div class="draw-bar panel-glass" id="challengeBar" style="display:none">
+    <span id="challengeTxt">Desafio recebido!</span>
+    <button type="button" class="mini-btn prim" id="btnChallengeYes">Aceitar</button>
+    <button type="button" class="mini-btn" id="btnChallengeNo">Recusar</button>
+  </div>
+
   <!-- TOAST -->
   <div class="toast panel-glass" id="toast"></div>
 
@@ -137,9 +148,14 @@
   <div class="overlay" id="menuOverlay">
     <div class="modal panel-glass menu-card">
       <div class="menu-header">
-        <div class="modal-eyebrow">CLUBE EDITORIAL 3D · REGRAS FIDE</div>
-        <h1 class="hero-title">Xadrez Royale</h1>
-        <p class="hero-sub">Partidas 3D de baixa latência para PC e celular, com IA em thread separada e modo online.</p>
+        <div class="menu-brand-row">
+          <img src="/icon.svg" alt="Xadrez Royale" class="hero-logo" width="52" height="52">
+          <div>
+            <div class="modal-eyebrow">CLUBE EDITORIAL 3D · REGRAS FIDE</div>
+            <h1 class="hero-title">Xadrez Royale</h1>
+          </div>
+        </div>
+        <p class="hero-sub">Escultura Staunton 3D, Stockfish 19 NNUE, abertura em tempo real e modo online.</p>
       </div>
 
       <button type="button" class="btn full" id="btnResumeGame" style="display:none">▶ RETOMAR PARTIDA</button>
@@ -153,12 +169,14 @@
       <!-- OPÇÕES LOCAIS / IA -->
       <div id="localOpts">
         <div class="field-row" id="diffRow">
-          <label>Nível da IA</label>
+          <label>Oponente & Nível da IA</label>
           <div class="seg-group compact" id="segDiff">
-            <button type="button" class="seg" data-val="1">Casual</button>
-            <button type="button" class="seg active" data-val="2">Clube</button>
-            <button type="button" class="seg" data-val="3">Mestre</button>
+            <button type="button" class="seg" data-val="1">🌱 Sofia (850)</button>
+            <button type="button" class="seg active" data-val="2">⚔️ Viktor (1350)</button>
+            <button type="button" class="seg" data-val="3">🏛️ Helena (1650)</button>
+            <button type="button" class="seg" data-val="4">🤖 Stockfish (2750)</button>
           </div>
+          <div class="bot-card" id="botCardDesc">⚔️ <strong>Viktor · Tático Agressivo:</strong> Busca ataques diretos ao rei, sacrifícios e xeques.</div>
         </div>
 
         <div class="field-row" id="sideRow">
@@ -187,7 +205,7 @@
         <div class="online-profile panel-glass-inner">
           <div>
             <input type="text" id="nickInput" class="txt-input" maxlength="16" placeholder="SEU APELIDO">
-            <div class="rating-line" id="ratingLine">Rating: 1200</div>
+            <div class="rating-line" id="ratingLine">🥈 Prata · 1200</div>
           </div>
           <button type="button" class="btn-google" id="btnGoogle">Conectar Google</button>
         </div>
@@ -210,7 +228,14 @@
             <button type="button" class="btn" id="btnCreateRoom">Criar Sala</button>
             <button type="button" class="btn" id="btnShowJoin">Entrar com Código</button>
           </div>
-          <button type="button" class="btn full" id="btnLeaderboard">🏆 Ranking</button>
+          <div class="two-col">
+            <button type="button" class="btn" id="btnTv">📺 TV Ao Vivo</button>
+            <button type="button" class="btn" id="btnSocial">👥 Amigos & Desafios</button>
+          </div>
+          <div class="two-col">
+            <button type="button" class="btn" id="btnProfile">🏅 Perfil & Ligas</button>
+            <button type="button" class="btn" id="btnLeaderboard">🏆 Ranking</button>
+          </div>
         </div>
 
         <div id="searchBox" style="display:none">
@@ -283,6 +308,48 @@
     </div>
   </div>
 
+  <!-- TV XADREZ ROYALE (ESPECTADOR AO VIVO) -->
+  <div class="overlay hide" id="tvOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow">TV XADREZ ROYALE · AO VIVO</div>
+      <h2 class="modal-title">Partidas em Andamento</h2>
+      <div id="tvList" class="lb-list"></div>
+      <button type="button" class="btn full" id="btnCloseTv">FECHAR</button>
+    </div>
+  </div>
+
+  <!-- AMIGOS & JOGADORES ONLINE -->
+  <div class="overlay hide" id="socialOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow">CLUBE SOCIAL</div>
+      <h2 class="modal-title">Jogadores Online & Amigos</h2>
+      <div class="field-row">
+        <label>Jogadores Ativos Agora</label>
+        <div id="onlinePlayersList" class="lb-list"></div>
+      </div>
+      <div class="field-row">
+        <label>Meus Amigos</label>
+        <div id="friendsList" class="lb-list"></div>
+      </div>
+      <button type="button" class="btn full" id="btnCloseSocial">FECHAR</button>
+    </div>
+  </div>
+
+  <!-- PERFIL, LIGAS & CONQUISTAS -->
+  <div class="overlay hide" id="profileOverlay">
+    <div class="modal panel-glass">
+      <div class="modal-eyebrow">CARTÃO DE JOGADOR</div>
+      <h2 class="modal-title" id="profTitle">JOGADOR</h2>
+      <div class="prof-league-banner" id="profLeagueBanner">🥈 Liga Prata · 1200 Elo</div>
+      <div class="prof-stats-grid" id="profStatsGrid"></div>
+      <div class="field-row">
+        <label>Conquistas Desbloqueadas</label>
+        <div id="achGrid" class="ach-grid"></div>
+      </div>
+      <button type="button" class="btn full" id="btnCloseProfile">FECHAR</button>
+    </div>
+  </div>
+
   <!-- RANKING -->
   <div class="overlay hide" id="lbOverlay">
     <div class="modal panel-glass">
@@ -300,8 +367,10 @@
       <h2 class="modal-title" id="overTitle">Brancas Vencem</h2>
       <p class="hero-sub" id="overSub">Xeque-mate</p>
       <div id="overDelta" class="delta-badge" style="display:none"></div>
+      <div id="rematchStatus" class="status-msg" style="display:none"></div>
       <button type="button" class="btn prim full" id="btnRematch">JOGAR NOVAMENTE</button>
       <button type="button" class="btn full" id="btnAnalyze" style="display:none">🔍 ANALISAR PARTIDA</button>
+      <button type="button" class="btn full" id="btnShareResult">📸 COMPARTILHAR RESULTADO</button>
       <button type="button" class="btn full" id="btnViewBoard">👁 VER TABULEIRO</button>
       <button type="button" class="btn full" id="btnOverMenu">VOLTAR AO MENU</button>
     </div>

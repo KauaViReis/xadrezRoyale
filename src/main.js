@@ -16,12 +16,17 @@ import { formatClock } from './core/elo.js';
 import { BOARD_THEMES, PIECE_THEMES } from './engine/themes.js';
 import { applyQualityTier } from './engine/quality.js';
 import { createScene } from './engine/scene.js';
-import { createBoard, applyBoardMaterialTextures } from './engine/board3d.js';
-import { createChessGeometries, makeChessPiece, applyPieceTheme as applyPieceTheme3D, animatePieceMove } from './engine/pieces3d.js';
+import { createBoard, applyBoardMaterialTextures, worldPos } from './engine/board3d.js';
+import {
+  createChessGeometries, makeChessPiece, applyPieceTheme as applyPieceTheme3D,
+  animatePieceMove, animateKingTopple, animatePiecesIntro
+} from './engine/pieces3d.js';
 import { FXManager } from './engine/fx.js';
 import { CameraController } from './engine/camera.js';
 import { OnlineManager, isFirebaseConfigured } from './online/firebase.js';
 import { getStockfishHint } from './workers/stockfish-hint.js';
+import { detectOpening } from './core/openings.js';
+import { BOT_PROFILES, getLeague, ACHIEVEMENTS, evaluateMatchAchievements } from './core/meta.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -125,13 +130,14 @@ const online = new OnlineManager();
 let onlineInitPromise = null;
 
 function canUseHint() {
-  if (!gameActive || reviewPly !== null) return false;
+  if (!gameActive || reviewPly !== null || online.game?.spectate) return false;
   if (mode !== 'online') return true;
   return online.isVipDev();
 }
 
 function canShowEval() {
   if (plyAnalyses.length > 0 && reviewPly !== null) return true;
+  if (mode === 'online' && online.game?.spectate) return true;
   if (mode === 'online') return evalVisible && online.isVipDev();
   return evalVisible;
 }
@@ -159,6 +165,7 @@ function applyBoardTheme(i) {
   const t = BOARD_THEMES[i] || BOARD_THEMES[0];
   boardCtx.setTheme(i, qualityTier);
   scene.background = new THREE.Color(t.bg);
+  fx.setWeather(t.weather || 'none');
   document.querySelectorAll('#boardSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
   savePrefs();
 }
@@ -315,6 +322,17 @@ function renderHistory() {
     list.appendChild(row);
   }
   list.scrollTop = list.scrollHeight;
+
+  const op = detectOpening(hist);
+  const opEl = $('#openingBadge');
+  if (opEl) {
+    if (op) {
+      opEl.innerHTML = `<strong>${op.eco}</strong> · ${op.name}`;
+      opEl.style.display = 'block';
+    } else {
+      opEl.style.display = 'none';
+    }
+  }
 
   const total = hist.length;
   $('#btnHistFirst').disabled = activePly <= 0;
@@ -563,23 +581,62 @@ async function executeMove(moveInput, isRemote = false) {
   return true;
 }
 
+const ACH_KEY = 'xadrezRoyale.achievements';
+const loadUnlockedAch = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(ACH_KEY)) || []); }
+  catch { return new Set(); }
+};
+const unlockedAch = loadUnlockedAch();
+let localWinStreak = 0;
+let lastMatchWinner = 'draw';
+let lastMatchReason = '';
+
+function unlockMatchesAchievements(ids = []) {
+  let added = false;
+  for (const id of ids) {
+    if (!unlockedAch.has(id)) {
+      unlockedAch.add(id);
+      added = true;
+      const meta = ACHIEVEMENTS.find(a => a.id === id);
+      if (meta) toast(`Conquista: ${meta.icon} ${meta.name}!`);
+    }
+  }
+  if (added) {
+    try { localStorage.setItem(ACH_KEY, JSON.stringify([...unlockedAch])); } catch { /* noop */ }
+  }
+}
+
+function currentBotProfile() {
+  return BOT_PROFILES[Math.max(0, Math.min(BOT_PROFILES.length - 1, (aiDepth || 2) - 1))] || BOT_PROFILES[1];
+}
+
 async function runAIMove() {
   if (!gameActive || chess.isGameOver()) return;
-  $('#turnTxt').textContent = 'MÁQUINA PENSANDO…';
-  const res = await askWorker('bestMove', { fen: chess.fen(), depth: aiDepth });
+  const bot = currentBotProfile();
+  $('#turnTxt').textContent = `${bot.name.toUpperCase()} PENSANDO…`;
+
+  let res = null;
+  if (bot.style === 'stockfish') {
+    res = await getStockfishHint(chess.fen(), { depth: 12, movetime: 750 });
+  }
+  if (!res || !res.ok || !res.move) {
+    res = await askWorker('bestMove', { fen: chess.fen(), depth: Math.min(3, bot.depth || aiDepth) });
+  }
   if (!gameActive || !res.ok || !res.move) return;
   await executeMove(res.move);
 }
 
-function endGameFromBoard(customWinner = null, customReason = '') {
+async function endGameFromBoard(customWinner = null, customReason = '') {
+  if (!gameActive && !customWinner) return;
   gameActive = false;
   clearPremove();
   hideHint();
   let winner = customWinner;
   let reason = customReason;
+  const isMate = chess.isCheckmate();
 
   if (!winner) {
-    if (chess.isCheckmate()) {
+    if (isMate) {
       winner = chess.turn() === 'w' ? 'b' : 'w';
       reason = 'Xeque-mate';
     } else if (chess.isStalemate()) {
@@ -597,16 +654,57 @@ function endGameFromBoard(customWinner = null, customReason = '') {
     }
   }
 
-  audio.win();
+  lastMatchWinner = winner;
+  lastMatchReason = reason;
+
+  if (mode === 'online' && !customWinner && !online.game?.spectate) {
+    online.finishGame(winner, reason);
+  }
+
+  /* Killcam 3D Cinematográfica de Xeque-Mate */
+  if (isMate) {
+    const loserColor = chess.turn();
+    const kingPiece = pieceMeshes.find(p => p.type === 'k' && p.color === loserColor);
+    if (kingPiece) {
+      const kPos = worldPos(kingPiece.r, kingPiece.c);
+      fx.spawnParticles(kingPiece.r, kingPiece.c, 0xC99A3E, 22);
+      await Promise.all([
+        cam.playKillcam(kPos),
+        animateKingTopple(kingPiece)
+      ]);
+    }
+  }
+
+  if (winner === 'draw') audio.draw();
+  else if (mode !== 'pvp' && winner !== myColor) audio.defeat();
+  else audio.win();
+
+  /* Avalia Conquistas */
+  if (!online.game?.spectate) {
+    const won = mode === 'pvp' ? winner !== 'draw' : winner === myColor;
+    if (won) localWinStreak++; else localWinStreak = 0;
+    const histV = chess.history({ verbose: true });
+    const myMoves = histV.filter(m => m.color === (mode === 'pvp' ? winner : myColor));
+    const newAchs = evaluateMatchAchievements({
+      won,
+      isCheckmate: isMate,
+      pliesCount: histV.length,
+      castled: myMoves.some(m => m.flags.includes('k') || m.flags.includes('q')),
+      promoted: myMoves.some(m => Boolean(m.promotion)),
+      streak: online.profile?.streak || localWinStreak,
+      botId: mode === 'pve' ? currentBotProfile().id : null
+    });
+    unlockMatchesAchievements(newAchs);
+  }
+
   $('#overTitle').textContent = winner === 'draw' ? 'Empate' : (winner === 'w' ? 'Brancas Vencem' : 'Pretas Vencem');
   $('#overSub').textContent = reason;
   $('#overDelta').style.display = 'none';
+  $('#rematchStatus').style.display = 'none';
+  $('#btnRematch').textContent = (mode === 'online' && !online.game?.spectate) ? '🔄 PEDIR REVANCHE' : 'JOGAR NOVAMENTE';
+  $('#btnRematch').style.display = online.game?.spectate ? 'none' : 'block';
   $('#btnAnalyze').style.display = chess.history().length > 0 ? 'block' : 'none';
   $('#overOverlay').classList.remove('hide');
-
-  if (mode === 'online' && !customWinner) {
-    online.finishGame(winner, reason);
-  }
 }
 
 /* ============ SETAS TÁTICAS & ANOTAÇÕES ============ */
@@ -663,7 +761,7 @@ const ray = new THREE.Raycaster();
 const ptr = new THREE.Vector2();
 
 cam.onTap = async (cx, cy) => {
-  if (cam.arrowMode) return;
+  if (cam.arrowMode || online.game?.spectate) return;
   fx.clearManualAnnotations();
   if (!gameActive || busy || reviewPly !== null) return;
   if (mode === 'pve' && chess.turn() !== playerSide) return;
@@ -778,22 +876,37 @@ function startMatch(newMode, opts = {}) {
   capturedSymbols = { w: '', b: '' };
   $('#capsW').textContent = '';
   $('#capsB').textContent = '';
+
+  if (mode === 'online' && opts.spectate && Array.isArray(opts.moves)) {
+    for (const m of opts.moves) {
+      try { chess.move({ from: m.from, to: m.to, promotion: m.promotion || undefined }); } catch { /* noop */ }
+    }
+  }
+
   rebuildBoardPieces();
   renderHistory();
+  animatePiecesIntro(pieceMeshes);
 
   if (mode === 'online') {
     myColor = opts.myColor || 'w';
-    const oppName = opts.opponent?.name || 'OPONENTE';
-    const myName = online.profile?.name || nick;
-    $('#nameW').textContent = myColor === 'w' ? myName : oppName;
-    $('#nameB').textContent = myColor === 'b' ? myName : oppName;
+    if (opts.spectate && opts.data) {
+      $('#nameW').textContent = opts.data.white?.name || 'BRANCAS';
+      $('#nameB').textContent = opts.data.black?.name || 'PRETAS';
+    } else {
+      const oppName = opts.opponent?.name || 'OPONENTE';
+      const myName = online.profile?.name || nick;
+      $('#nameW').textContent = myColor === 'w' ? myName : oppName;
+      $('#nameB').textContent = myColor === 'b' ? myName : oppName;
+    }
     clockW = opts.tc?.base || 300000;
     clockB = opts.tc?.base || 300000;
     cam.resetView(myColor);
   } else {
     myColor = playerSide;
-    $('#nameW').textContent = mode === 'pve' && playerSide === 'b' ? 'MÁQUINA' : 'BRANCAS';
-    $('#nameB').textContent = mode === 'pve' && playerSide === 'w' ? 'MÁQUINA' : 'PRETAS';
+    const bot = currentBotProfile();
+    const botLabel = `${bot.avatar} ${bot.name.toUpperCase()} (${bot.rating})`;
+    $('#nameW').textContent = mode === 'pve' && playerSide === 'b' ? botLabel : 'BRANCAS';
+    $('#nameB').textContent = mode === 'pve' && playerSide === 'w' ? botLabel : 'PRETAS';
     clockW = localTimeLimit > 0 ? localTimeLimit : null;
     clockB = localTimeLimit > 0 ? localTimeLimit : null;
     cam.resetView(mode === 'pve' ? playerSide : 'w');
@@ -803,6 +916,8 @@ function startMatch(newMode, opts = {}) {
   busy = false;
   $('#menuOverlay').classList.add('hide');
   $('#overOverlay').classList.add('hide');
+  $('#tvOverlay')?.classList.add('hide');
+  $('#socialOverlay')?.classList.add('hide');
   updateClocksUI();
   updateTurnUI();
   refreshEval();
@@ -900,7 +1015,20 @@ bindSeg('#segMode', v => {
   if (isOnline) ensureOnline();
 });
 
-bindSeg('#segDiff', v => { aiDepth = Number(v); savePrefs(); });
+function refreshBotCardUI() {
+  const bot = currentBotProfile();
+  const el = $('#botCardDesc');
+  if (el && bot) {
+    el.innerHTML = `${bot.avatar} <strong>${bot.name} (${bot.rating}) · ${bot.title}:</strong> ${bot.desc}`;
+  }
+}
+bindSeg('#segDiff', v => {
+  aiDepth = Number(v);
+  savePrefs();
+  refreshBotCardUI();
+});
+document.querySelectorAll('#segDiff .seg').forEach(b => b.classList.toggle('active', Number(b.dataset.val) === aiDepth));
+refreshBotCardUI();
 bindSeg('#segSide', v => { playerSide = v; });
 bindSeg('#segTcLocal', v => { localTimeLimit = Number(v); });
 bindSeg('#segTcOnline', v => {
@@ -1054,10 +1182,23 @@ $('#btnDrawNo').onclick = () => { $('#drawBar').style.display = 'none'; online.r
 
 $('#btnAnalyze').onclick = runPostGameAnalysis;
 $('#btnViewBoard').onclick = () => $('#overOverlay').classList.add('hide');
-$('#btnRematch').onclick = () => {
-  if (mode === 'online') {
-    $('#overOverlay').classList.add('hide');
-    $('#menuOverlay').classList.remove('hide');
+$('#btnRematch').onclick = async () => {
+  if (mode === 'online' && !online.game?.spectate) {
+    const btn = $('#btnRematch');
+    btn.disabled = true;
+    try {
+      const res = await online.requestRematch();
+      const st = $('#rematchStatus');
+      st.style.display = 'block';
+      if (res?.started) {
+        st.textContent = 'Revanche aceita! Iniciando nova partida…';
+      } else if (res?.offered) {
+        st.textContent = 'Convite de revanche enviado… aguardando oponente.';
+        btn.textContent = '⏳ AGUARDANDO OPONENTE';
+      }
+    } finally {
+      btn.disabled = false;
+    }
   } else {
     startMatch(mode);
   }
@@ -1067,10 +1208,77 @@ $('#btnOverMenu').onclick = () => {
   $('#menuOverlay').classList.remove('hide');
 };
 
+/* Cartão PNG Compartilhável de Resultado */
+$('#btnShareResult').onclick = async () => {
+  const c = document.createElement('canvas');
+  c.width = 1200;
+  c.height = 630;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 1200, 630);
+  grad.addColorStop(0, '#0D0C0A');
+  grad.addColorStop(0.5, '#191612');
+  grad.addColorStop(1, '#0A0908');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1200, 630);
+
+  ctx.strokeStyle = '#C99A3E';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(36, 36, 1128, 558);
+
+  ctx.fillStyle = '#C99A3E';
+  ctx.font = 'bold 28px Georgia, serif';
+  ctx.fillText('♔ XADREZ ROYALE 3D · EDIÇÃO STAUNTON', 76, 102);
+
+  ctx.fillStyle = '#F3EDE0';
+  ctx.font = 'bold 64px Georgia, serif';
+  ctx.fillText($('#overTitle').textContent || 'Fim de Partida', 76, 200);
+
+  ctx.fillStyle = '#D4AF37';
+  ctx.font = '32px system-ui, sans-serif';
+  ctx.fillText(`${lastMatchReason || $('#overSub').textContent} · ${chess.history().length} lances`, 76, 256);
+
+  const wName = $('#nameW').textContent || 'BRANCAS';
+  const bName = $('#nameB').textContent || 'PRETAS';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 38px system-ui, sans-serif';
+  ctx.fillText(`♔ ${wName}   vs   ♚ ${bName}`, 76, 355);
+
+  const op = detectOpening(chess.history());
+  if (op) {
+    ctx.fillStyle = '#B8AD9E';
+    ctx.font = '28px system-ui, sans-serif';
+    ctx.fillText(`📖 Abertura: ${op.eco} · ${op.name}`, 76, 425);
+  }
+
+  const r = online.profile?.rating || 1200;
+  const lg = getLeague(r);
+  ctx.fillStyle = lg.color || '#C99A3E';
+  ctx.font = 'bold 28px system-ui, sans-serif';
+  ctx.fillText(`Liga ${lg.name} · Rating ${r} · ${unlockedAch.size}/${ACHIEVEMENTS.length} Conquistas`, 76, 520);
+
+  c.toBlob(async blob => {
+    if (!blob) return;
+    const file = new File([blob], 'xadrez-royale.png', { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ title: 'Xadrez Royale 3D', text: `${$('#overTitle').textContent} (${wName} vs ${bName})`, files: [file] });
+        return;
+      } catch { /* fallback download */ }
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'xadrez-royale-resultado.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    toast('Cartão da partida salvo em PNG!');
+  }, 'image/png');
+};
+
 window.addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   if (e.key === 'Escape') {
-    for (const id of ['settingsOverlay', 'lbOverlay', 'promoModal']) {
+    for (const id of ['settingsOverlay', 'lbOverlay', 'tvOverlay', 'socialOverlay', 'profileOverlay', 'promoModal']) {
       $(`#${id}`)?.classList.add('hide');
     }
     if (premove) clearPremove();
@@ -1104,13 +1312,48 @@ PIECE_THEMES.forEach((t, i) => {
   $('#pieceSwatches').appendChild(b);
 });
 
-/* ============ ONLINE BINDINGS ============ */
+/* ============ ONLINE BINDINGS, TV, SOCIAL & PERFIL ============ */
 $('#nickInput').value = nick;
 $('#nickInput').onchange = () => {
   nick = ($('#nickInput').value.trim() || 'JOGADOR').toUpperCase().slice(0, 16);
   $('#nickInput').value = nick;
   savePrefs();
   if (online.ready) online.setName(nick);
+};
+
+function formatRatingLeague(r) {
+  const lg = getLeague(r);
+  return `${lg.icon} Liga ${lg.name} · ${r} Elo${online.isVipDev() ? ' · VIP' : ''}`;
+}
+
+let activeChallengeOffer = null;
+function setupChallengeListener() {
+  online.listenIncomingChallenges(ch => {
+    activeChallengeOffer = ch;
+    const bar = $('#challengeBar');
+    if (!bar) return;
+    $('#challengeBarTxt').textContent = `⚔️ ${ch.fromName} (${ch.fromRating}) desafiou você (${ch.tc?.label || '5+0'})!`;
+    bar.style.display = 'flex';
+  });
+}
+
+$('#btnChallengeYes').onclick = async () => {
+  if (!activeChallengeOffer) return;
+  const ch = activeChallengeOffer;
+  activeChallengeOffer = null;
+  $('#challengeBar').style.display = 'none';
+  try {
+    await online.acceptChallenge(ch);
+  } catch (e) {
+    toast(e.message || 'Erro ao aceitar desafio');
+  }
+};
+$('#btnChallengeNo').onclick = async () => {
+  if (!activeChallengeOffer) return;
+  const ch = activeChallengeOffer;
+  activeChallengeOffer = null;
+  $('#challengeBar').style.display = 'none';
+  await online.declineChallenge(ch.id);
 };
 
 async function ensureOnline() {
@@ -1125,8 +1368,10 @@ async function ensureOnline() {
     onlineInitPromise = online.init(nick).then(ok => {
       if (ok) {
         $('#onlineStatus').style.display = 'none';
-        $('#ratingLine').textContent = `Rating: ${online.profile.rating}${online.isVipDev() ? ' · VIP' : ''}`;
+        $('#ratingLine').textContent = formatRatingLeague(online.profile.rating);
         if (online.profile.google) $('#btnGoogle').textContent = '✓ Google Conectado';
+        online.updateActive();
+        setupChallengeListener();
       } else {
         $('#onlineStatus').textContent = 'Falha ao conectar ao Firebase.';
         onlineInitPromise = null;
@@ -1137,13 +1382,17 @@ async function ensureOnline() {
   return onlineInitPromise;
 }
 
-online.onMatchFound = ({ myColor: mc, opponent, code, data }) => {
+online.onMatchFound = ({ myColor: mc, opponent, code, data, spectate, moves }) => {
   $('#searchBox').style.display = 'none';
   $('#roomBox').style.display = 'none';
   $('#onlineActions').style.display = 'block';
-  onlineTc = data.tc || onlineTc;
-  startMatch('online', { myColor: mc, opponent, tc: onlineTc, code });
-  toast(`Partida iniciada vs ${opponent?.name || 'Oponente'}`);
+  onlineTc = data?.tc || onlineTc;
+  startMatch('online', { myColor: mc, opponent, tc: onlineTc, code, data, spectate, moves });
+  if (spectate) {
+    toast(`Assistindo ao vivo: ${data?.white?.name || 'Brancas'} vs ${data?.black?.name || 'Pretas'}`);
+  } else {
+    toast(`Partida iniciada vs ${opponent?.name || 'Oponente'}`);
+  }
 };
 
 online.onOpponentMove = entry => {
@@ -1151,9 +1400,18 @@ online.onOpponentMove = entry => {
 };
 
 online.onDrawOffer = () => { $('#drawBar').style.display = 'flex'; };
+online.onRematchOffer = () => {
+  const st = $('#rematchStatus');
+  if (st) {
+    st.style.display = 'block';
+    st.textContent = '🔥 Seu oponente quer revanche! Clique abaixo para aceitar.';
+  }
+  const btn = $('#btnRematch');
+  if (btn) btn.textContent = '✓ ACEITAR REVANCHE';
+};
 online.onGameEnd = (winner, reason) => { endGameFromBoard(winner, reason); };
 online.onRated = (delta, newRating) => {
-  $('#ratingLine').textContent = `Rating: ${newRating}${online.isVipDev() ? ' · VIP' : ''}`;
+  $('#ratingLine').textContent = formatRatingLeague(newRating);
   $('#overDelta').style.display = 'block';
   $('#overDelta').textContent = `${delta >= 0 ? '+' : ''}${delta} Elo (${newRating})`;
 };
@@ -1165,7 +1423,7 @@ $('#btnGoogle').onclick = async () => {
     if (res?.linked) {
       toast(res.msg);
       $('#btnGoogle').textContent = '✓ Google Conectado';
-      $('#ratingLine').textContent = `Rating: ${online.profile.rating}${online.isVipDev() ? ' · VIP' : ''}`;
+      $('#ratingLine').textContent = formatRatingLeague(online.profile.rating);
       updateTurnUI();
       refreshEval();
     }
@@ -1215,15 +1473,172 @@ $('#btnLeaderboard').onclick = async () => {
   $('#lbOverlay').classList.remove('hide');
   $('#lbList').innerHTML = '<div class="status-msg">Carregando…</div>';
   const list = await online.leaderboard(10);
-  $('#lbList').innerHTML = list.map((p, i) =>
-    `<div class="lb-row"><span>${i + 1}. ${p.name}</span><strong>${p.rating}</strong></div>`
-  ).join('') || '<div class="status-msg">Nenhum jogador no ranking ainda.</div>';
+  $('#lbList').innerHTML = list.map((p, i) => {
+    const lg = getLeague(p.rating || 1200);
+    return `<div class="lb-row"><span>${i + 1}. ${lg.icon} ${p.name}</span><strong>${p.rating}</strong></div>`;
+  }).join('') || '<div class="status-msg">Nenhum jogador no ranking ainda.</div>';
 };
 $('#btnCloseLb').onclick = () => $('#lbOverlay').classList.add('hide');
+
+/* TV Xadrez Royale (Modo Espectador Ao Vivo) */
+$('#btnTv').onclick = async () => {
+  if (!(await ensureOnline())) return;
+  $('#tvOverlay').classList.remove('hide');
+  $('#tvList').innerHTML = '<div class="status-msg">Buscando partidas ao vivo…</div>';
+  const games = await online.listActiveGames(12);
+  if (!games.length) {
+    $('#tvList').innerHTML = '<div class="status-msg">Nenhuma partida online em andamento agora.</div>';
+    return;
+  }
+  $('#tvList').innerHTML = games.map(g => {
+    const w = g.white?.name || 'Brancas';
+    const b = g.black?.name || 'Pretas';
+    const wr = g.white?.rating || 1200;
+    const br = g.black?.rating || 1200;
+    const plies = Array.isArray(g.moves) ? g.moves.length : 0;
+    return `<div class="lb-row">
+      <div class="row-meta">
+        <strong>♔ ${w} (${wr}) vs ♚ ${b} (${br})</strong>
+        <small>${g.tc?.label || '5+0'} · ${plies} lances</small>
+      </div>
+      <button class="btn-secondary btn-mini" data-watch="${g.id}">📺 Assistir</button>
+    </div>`;
+  }).join('');
+  $('#tvList').querySelectorAll('[data-watch]').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        await online.spectateGame(btn.dataset.watch);
+      } catch (e) {
+        toast(e.message || 'Não foi possível assistir');
+      }
+    };
+  });
+};
+$('#btnCloseTv').onclick = () => $('#tvOverlay').classList.add('hide');
+
+/* Amigos & Desafios Diretos */
+$('#btnSocial').onclick = async () => {
+  if (!(await ensureOnline())) return;
+  $('#socialOverlay').classList.remove('hide');
+  $('#onlinePlayersList').innerHTML = '<div class="status-msg">Carregando jogadores…</div>';
+  $('#friendsList').innerHTML = '<div class="status-msg">Carregando amigos…</div>';
+  await online.updateActive();
+
+  const [players, friends] = await Promise.all([
+    online.listOnlinePlayers(15),
+    online.listFriends()
+  ]);
+  const friendIds = new Set(friends.map(f => f.uid));
+
+  const renderChallengeHandlers = root => {
+    root.querySelectorAll('[data-challenge]').forEach(btn => {
+      btn.onclick = async () => {
+        const target = {
+          uid: btn.dataset.challenge,
+          name: btn.dataset.name,
+          rating: Number(btn.dataset.rating) || 1200
+        };
+        btn.disabled = true;
+        btn.textContent = '⏳ Enviado';
+        try {
+          const chId = await online.sendChallenge(target, onlineTc);
+          toast(`Desafio enviado para ${target.name}!`);
+          online.listenOutgoingChallenge(chId, async ch => {
+            if (ch.status === 'accepted' && ch.gameId) {
+              await online.joinChallengeAsWhite(ch);
+            } else if (ch.status === 'declined') {
+              toast(`${target.name} recusou o desafio.`);
+            }
+          });
+        } catch {
+          toast('Falha ao enviar desafio');
+        }
+      };
+    });
+    root.querySelectorAll('[data-friend]').forEach(btn => {
+      btn.onclick = async () => {
+        const target = {
+          uid: btn.dataset.friend,
+          name: btn.dataset.name,
+          rating: Number(btn.dataset.rating) || 1200
+        };
+        await online.addFriend(target);
+        btn.disabled = true;
+        btn.textContent = '✓ Amigo';
+        toast(`${target.name} adicionado aos amigos!`);
+      };
+    });
+  };
+
+  $('#onlinePlayersList').innerHTML = players.map(p => {
+    const lg = getLeague(p.rating || 1200);
+    const isFr = friendIds.has(p.uid);
+    return `<div class="lb-row">
+      <div class="row-meta">
+        <strong>${lg.icon} ${p.name}</strong>
+        <small>${p.rating || 1200} Elo</small>
+      </div>
+      <div class="row-actions">
+        <button class="btn-secondary btn-mini" data-challenge="${p.uid}" data-name="${p.name}" data-rating="${p.rating || 1200}">⚔️ Desafiar</button>
+        ${isFr ? '' : `<button class="btn-secondary btn-mini" data-friend="${p.uid}" data-name="${p.name}" data-rating="${p.rating || 1200}">+ Amigo</button>`}
+      </div>
+    </div>`;
+  }).join('') || '<div class="status-msg">Nenhum outro jogador online no momento.</div>';
+
+  $('#friendsList').innerHTML = friends.map(f => {
+    const lg = getLeague(f.rating || 1200);
+    return `<div class="lb-row">
+      <div class="row-meta">
+        <strong>${lg.icon} ${f.name}</strong>
+        <small>${f.rating || 1200} Elo</small>
+      </div>
+      <div class="row-actions">
+        <button class="btn-secondary btn-mini" data-challenge="${f.uid}" data-name="${f.name}" data-rating="${f.rating || 1200}">⚔️ Desafiar</button>
+      </div>
+    </div>`;
+  }).join('') || '<div class="status-msg">Adicione jogadores da lista acima para desafiar rapidamente.</div>';
+
+  renderChallengeHandlers($('#onlinePlayersList'));
+  renderChallengeHandlers($('#friendsList'));
+};
+$('#btnCloseSocial').onclick = () => $('#socialOverlay').classList.add('hide');
+
+/* Modal de Perfil, Ligas & Conquistas */
+$('#btnProfile').onclick = () => {
+  const r = online.profile?.rating || 1200;
+  const lg = getLeague(r);
+  const games = online.profile?.games || 0;
+  const wins = online.profile?.wins || 0;
+  $('#profileLeagueBox').innerHTML = `
+    <div class="league-icon">${lg.icon}</div>
+    <div class="league-info">
+      <strong>${ nick } · Liga ${lg.name}</strong>
+      <small>Rating ${r} Elo · Próxima liga: ${lg.max === Infinity ? 'Nível Máximo!' : `${lg.max + 1} Elo`}</small>
+    </div>
+  `;
+  $('#profileStatsGrid').innerHTML = `
+    <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
+    <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
+    <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
+  `;
+  $('#achGrid').innerHTML = ACHIEVEMENTS.map(a => {
+    const unlocked = unlockedAch.has(a.id);
+    return `<div class="ach-card ${unlocked ? 'unlocked' : ''}">
+      <div class="ach-icon">${a.icon}</div>
+      <div class="ach-meta">
+        <strong>${a.name} ${unlocked ? '✓' : ''}</strong>
+        <small>${a.desc}</small>
+      </div>
+    </div>`;
+  }).join('');
+  $('#profileOverlay').classList.remove('hide');
+};
+$('#btnCloseProfile').onclick = () => $('#profileOverlay').classList.add('hide');
 
 /* ============ LOOP PRINCIPAL & FPS ADAPTATIVO ============ */
 applyBoardTheme(boardThemeIdx);
 rebuildBoardPieces();
+animatePiecesIntro(pieceMeshes);
 resize();
 cam.resetView('w');
 
@@ -1238,6 +1653,12 @@ if (roomParam) {
   document.querySelector('#segMode .seg[data-val="online"]')?.click();
   ensureOnline().then(ok => {
     if (ok) online.joinRoom(roomParam).catch(e => toast(e.message));
+  });
+}
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
 }
 
@@ -1257,8 +1678,8 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
     updateClocksUI();
     const active = chess.turn() === 'w' ? clockW : clockB;
     if (active <= 0) {
-      if (mode === 'online' && chess.turn() !== myColor) online.claimTimeout();
-      else endGameFromBoard(chess.turn() === 'w' ? 'b' : 'w', 'Tempo esgotado');
+      if (mode === 'online' && chess.turn() !== myColor && !online.game?.spectate) online.claimTimeout();
+      else if (!online.game?.spectate) endGameFromBoard(chess.turn() === 'w' ? 'b' : 'w', 'Tempo esgotado');
     } else if (active <= 15000) {
       const sec = Math.ceil(active / 1000);
       if (sec !== lastTickSec) { audio.tick(); lastTickSec = sec; }

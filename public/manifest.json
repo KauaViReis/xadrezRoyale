@@ -1,0 +1,21 @@
+{
+  "name": "Xadrez Royale — Xadrez 3D Online",
+  "short_name": "Xadrez Royale",
+  "description": "Xadrez 3D com regras oficiais FIDE, peças Staunton Championship, Stockfish 19 NNUE e modo online.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0E0D0B",
+  "theme_color": "#0E0D0B",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

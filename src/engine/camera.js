@@ -189,6 +189,27 @@ export class CameraController {
     });
   }
 
+  /* Killcam 3D de Xeque-Mate: aproxima em slow-motion da casa do Rei derrotado */
+  async playKillcam(targetVec) {
+    if (!targetVec || this.topDown) return;
+    const startTarget = this.target.clone();
+    const startRad = this.radius;
+    const startPhi = this.phi;
+    const startTheta = this.theta;
+    const endRad = Math.max(this.minRadius, startRad * 0.62);
+    const endPhi = 0.72;
+    const endTheta = startTheta + 0.32;
+
+    await tween(680, k => {
+      const e = easeIO(k);
+      this.target.lerpVectors(startTarget, targetVec, e * 0.65);
+      this.radius = startRad + (endRad - startRad) * e;
+      this.phi = startPhi + (endPhi - startPhi) * e;
+      this.theta = startTheta + (endTheta - startTheta) * e;
+      this.sync();
+    });
+  }
+
   _bind() {
     const el = this.canvas;
     if (!el || typeof el.addEventListener !== 'function') return;

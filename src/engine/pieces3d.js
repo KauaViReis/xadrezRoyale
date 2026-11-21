@@ -800,3 +800,35 @@ export async function animatePieceMove(piece, toR, toC, isJump = false, dur = 24
   });
   piece.mesh.position.set(to.x, 0, to.z);
 }
+
+/* Inclina/tomba o Rei derrotado a ~78 graus no Xeque-Mate */
+export async function animateKingTopple(kingPiece) {
+  if (!kingPiece || !kingPiece.mesh) return;
+  const m = kingPiece.mesh;
+  const tiltAngle = 1.36; // ~78°
+  await tween(620, k => {
+    const e = easeIO(k);
+    m.rotation.z = tiltAngle * e;
+    m.position.y = Math.sin(e * Math.PI) * 0.06;
+  });
+}
+
+/* Animação cinematográfica de entrada das peças ao iniciar partida */
+export function animatePiecesIntro(pieceMeshes = []) {
+  for (let i = 0; i < pieceMeshes.length; i++) {
+    const p = pieceMeshes[i];
+    if (!p || !p.mesh) continue;
+    const delay = (p.r * 22) + (p.c * 14);
+    const startY = 1.8 + (i % 4) * 0.25;
+    p.mesh.position.y = startY;
+    setTimeout(() => {
+      if (!p.mesh) return;
+      tween(340, k => {
+        const e = 1 - Math.pow(1 - k, 3);
+        p.mesh.position.y = startY * (1 - e);
+      }).then(() => {
+        if (p.mesh) p.mesh.position.y = 0;
+      });
+    }, delay);
+  }
+}

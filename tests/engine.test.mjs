@@ -243,5 +243,45 @@ test('createChessGeometries gera malhas Staunton Championship com UVs, vertex co
   disposeChessGeometries(gLow);
 });
 
+test('detectOpening identifica código ECO e nome em português pelo prefixo mais longo', async () => {
+  const { detectOpening } = await import('../src/core/openings.js');
+  assert.equal(detectOpening([]), null);
 
+  const sicilian = detectOpening(['e4', 'c5']);
+  assert.ok(sicilian);
+  assert.equal(sicilian.eco, 'B20');
+  assert.ok(sicilian.name.includes('Siciliana'));
 
+  const najdorf = detectOpening(['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6']);
+  assert.ok(najdorf);
+  assert.equal(najdorf.eco, 'B90');
+  assert.ok(najdorf.name.includes('Najdorf'));
+});
+
+test('getLeague, BOT_PROFILES e evaluateMatchAchievements funcionam corretamente', async () => {
+  const { getLeague, BOT_PROFILES, getBotById, evaluateMatchAchievements } = await import('../src/core/meta.js');
+  assert.equal(getLeague(950).id, 'bronze');
+  assert.equal(getLeague(1200).id, 'silver');
+  assert.equal(getLeague(1350).id, 'gold');
+  assert.equal(getLeague(2100).id, 'gm');
+
+  assert.equal(BOT_PROFILES.length, 4);
+  assert.equal(getBotById('stockfish').style, 'stockfish');
+
+  const unlocked = evaluateMatchAchievements({
+    won: true,
+    isCheckmate: true,
+    pliesCount: 30,
+    castled: true,
+    promoted: true,
+    streak: 3,
+    botId: 'stockfish'
+  });
+  assert.ok(unlocked.includes('first_win'));
+  assert.ok(unlocked.includes('checkmate'));
+  assert.ok(unlocked.includes('scholar'));
+  assert.ok(unlocked.includes('castle_win'));
+  assert.ok(unlocked.includes('promo_win'));
+  assert.ok(unlocked.includes('streak_3'));
+  assert.ok(unlocked.includes('beat_helena'));
+});

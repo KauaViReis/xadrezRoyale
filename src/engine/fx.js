@@ -504,6 +504,10 @@ export class FXManager {
     this.clearHint();
   }
 
+  setWeather(type = 'none') {
+    this.weatherType = type || 'none';
+  }
+
   /* ==================== PARTICLES & FRAME UPDATE ==================== */
   spawnParticles(r, c, colorHex, baseCount = 12) {
     const count = Math.max(2, Math.round(baseCount * this.particleScale));
@@ -517,7 +521,8 @@ export class FXManager {
       m.userData = {
         vel: new THREE.Vector3(Math.cos(ang) * spd, 2.5 + Math.random() * 2.5, Math.sin(ang) * spd),
         life: 0,
-        maxLife: 0.45 + Math.random() * 0.25
+        maxLife: 0.45 + Math.random() * 0.25,
+        gravity: -13
       };
       this.scene.add(m);
       this.particles.push(m);
@@ -548,6 +553,33 @@ export class FXManager {
       }
     }
 
+    /* Clima atmosférico por tema (desativado no tier low) */
+    const wType = this.weatherType || 'none';
+    const wChance = this.qualityTier === 'low' ? 0 : (this.qualityTier === 'medium' ? 0.10 : 0.22);
+    if (wType !== 'none' && this.particles.length < 70 && Math.random() < wChance) {
+      let col = 0xE6C88A;
+      let vy = 0.12 + Math.random() * 0.18;
+      if (wType === 'shimmer') {
+        col = 0xDCE8F5;
+        vy = -0.15 - Math.random() * 0.15;
+      } else if (wType === 'vice') {
+        col = Math.random() < 0.5 ? 0xFF5FA2 : 0x27D8E8;
+        vy = 0.22 + Math.random() * 0.25;
+      }
+      const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.45, depthWrite: false });
+      const m = new THREE.Mesh(this.particleGeo, mat);
+      m.position.set((Math.random() - 0.5) * 14, 0.2 + Math.random() * 4.5, (Math.random() - 0.5) * 14);
+      m.scale.setScalar(0.55);
+      m.userData = {
+        vel: new THREE.Vector3((Math.random() - 0.5) * 0.35, vy, (Math.random() - 0.5) * 0.35),
+        life: 0,
+        maxLife: 2.8 + Math.random() * 2.2,
+        gravity: 0
+      };
+      this.scene.add(m);
+      this.particles.push(m);
+    }
+
     if (this.particles.length === 0) return;
     let w = 0;
     for (let i = 0; i < this.particles.length; i++) {
@@ -562,7 +594,8 @@ export class FXManager {
       p.position.x += v.x * dt;
       p.position.y += v.y * dt;
       p.position.z += v.z * dt;
-      v.y -= 13 * dt;
+      const g = p.userData.gravity !== undefined ? p.userData.gravity : -13;
+      v.y += g * dt;
       const alpha = 1 - p.userData.life / p.userData.maxLife;
       p.material.opacity = alpha;
       p.scale.setScalar(alpha);

@@ -9,7 +9,8 @@ export const BOARD_THEMES = [
     bg: 0x0E0D0B,
     tex: 'wood',
     fillet: 0xC99A3E,
-    coord: 0xE6D3B3
+    coord: 0xE6D3B3,
+    weather: 'dust'
   },
   {
     id: 'marble',
@@ -21,7 +22,8 @@ export const BOARD_THEMES = [
     bg: 0x0C0E10,
     tex: 'marble',
     fillet: 0xB8C2CC,
-    coord: 0xDCE2E8
+    coord: 0xDCE2E8,
+    weather: 'shimmer'
   },
   {
     id: 'slate',
@@ -33,7 +35,8 @@ export const BOARD_THEMES = [
     bg: 0x0B0E0C,
     tex: 'slate',
     fillet: 0xC4A767,
-    coord: 0xCBD5C0
+    coord: 0xCBD5C0,
+    weather: 'dust'
   },
   {
     id: 'contrast',
@@ -45,7 +48,8 @@ export const BOARD_THEMES = [
     bg: 0x080808,
     tex: 'none',
     fillet: 0x8A8E94,
-    coord: 0xF5F5F5
+    coord: 0xF5F5F5,
+    weather: 'none'
   },
   {
     id: 'gtavi',
@@ -57,7 +61,8 @@ export const BOARD_THEMES = [
     bg: 0x0C0714,
     tex: 'marble',
     fillet: 0xFF5FA2,
-    coord: 0x27D8E8
+    coord: 0x27D8E8,
+    weather: 'vice'
   }
 ];
 

@@ -336,12 +336,33 @@ export class OnlineManager {
     this._attachGame(code, 'b');
   }
 
-  _attachGame(gameId, myColor) {
+  /* ============ TV XADREZ ROYALE (ESPECTADOR AO VIVO) ============ */
+  async listActiveGames(top = 15) {
+    if (!this.ready || !this.db) return [];
+    const snap = await getDocs(query(collection(this.db, 'chess_games'), where('status', '==', 'active'), limit(top)));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(g => g.white && g.black);
+  }
+
+  spectateGame(gameId) {
+    this._attachGame(gameId, 'w', { spectate: true });
+  }
+
+  _attachGame(gameId, myColor, opts = {}) {
     this._detachGame();
     this.appliedMoves = 0;
     this.rated = false;
     const ref = doc(this.db, 'chess_games', gameId);
-    this.game = { id: gameId, ref, myColor, data: null, started: false, lastOppHb: null, lastOppSeen: Date.now() };
+    this.game = {
+      id: gameId,
+      ref,
+      myColor,
+      spectate: !!opts.spectate,
+      data: null,
+      started: false,
+      lastOppHb: null,
+      lastOppSeen: Date.now(),
+      rematchJoined: false
+    };
 
     this.unsubGame = onSnapshot(ref, snap => {
       if (!snap.exists() || !this.game) return;
@@ -350,13 +371,14 @@ export class OnlineManager {
 
       if (!this.game.started && g.status !== 'waiting') {
         this.game.started = true;
-        this._startHeartbeat();
+        if (!this.game.spectate) this._startHeartbeat();
         const opponent = myColor === 'b' ? g.white : g.black;
         if (this.onMatchFound) {
           this.onMatchFound({
             myColor,
             opponent,
             code: gameId,
+            spectate: this.game.spectate,
             moves: (g.moves || []).map(s => JSON.parse(s)),
             data: g
           });
@@ -367,12 +389,12 @@ export class OnlineManager {
       while (this.appliedMoves < moves.length) {
         const entry = JSON.parse(moves[this.appliedMoves]);
         this.appliedMoves++;
-        if (entry.by !== this.uid && this.onOpponentMove) {
+        if ((this.game.spectate || entry.by !== this.uid) && this.onOpponentMove) {
           this.onOpponentMove(entry);
         }
       }
 
-      if (g.status === 'active' && g.drawOffer && g.drawOffer !== this.uid && this.onDrawOffer) {
+      if (g.status === 'active' && g.drawOffer && g.drawOffer !== this.uid && !this.game.spectate && this.onDrawOffer) {
         this.onDrawOffer();
       }
 
@@ -384,18 +406,50 @@ export class OnlineManager {
 
       if (g.status === 'finished' && !this.rated) {
         this.rated = true;
-        this._applyRating(g);
-        this._saveMatchHistory(gameId, g);
+        if (!this.game.spectate) {
+          this._applyRating(g);
+          this._saveMatchHistory(gameId, g);
+        }
         this._stopTimers();
         if (this.onGameEnd) this.onGameEnd(g.winner, g.reason);
       }
+
+      /* Revanche Instantânea na Mesma Sala (Opção A) */
+      if (g.status === 'finished' && !this.game.spectate) {
+        if (g.nextGameId && !this.game.rematchJoined) {
+          this.game.rematchJoined = true;
+          const nextColor = myColor === 'w' ? 'b' : 'w';
+          const nextId = g.nextGameId;
+          this._attachGame(nextId, nextColor);
+          return;
+        }
+        if (g.rematchOffer && g.rematchOffer !== this.uid && this.onRematchOffer) {
+          this.onRematchOffer();
+        }
+      }
     });
 
-    this.presenceTimer = setInterval(() => {
-      if (!this.game || !this.game.started) return;
-      if (this.game.data && this.game.data.status !== 'active') return;
-      if (this.onPresence) this.onPresence(Math.floor((Date.now() - this.game.lastOppSeen) / 1000));
-    }, 1000);
+    if (!opts.spectate) {
+      this.presenceTimer = setInterval(() => {
+        if (!this.game || !this.game.started) return;
+        if (this.game.data && this.game.data.status !== 'active') return;
+        if (this.onPresence) this.onPresence(Math.floor((Date.now() - this.game.lastOppSeen) / 1000));
+      }, 1000);
+    }
+  }
+
+  /* Pede ou aceita Revanche Instantânea invertendo as cores */
+  async requestRematch() {
+    if (!this.game || !this.game.data || this.game.spectate) return { status: 'none' };
+    const g = this.game.data;
+    if (g.rematchOffer && g.rematchOffer !== this.uid && !g.nextGameId) {
+      const nextId = this._randomId(10);
+      await setDoc(doc(this.db, 'chess_games', nextId), this._newGameDoc(g.black, g.white, 'active', g.tc));
+      await updateDoc(this.game.ref, { nextGameId: nextId }).catch(() => {});
+      return { status: 'started', nextId };
+    }
+    await updateDoc(this.game.ref, { rematchOffer: this.uid }).catch(() => {});
+    return { status: 'offered' };
   }
 
   _startHeartbeat() {
@@ -420,7 +474,7 @@ export class OnlineManager {
   }
 
   async sendMove(moveObj, myClockMs = null) {
-    if (!this.game || !this.game.data) return;
+    if (!this.game || !this.game.data || this.game.spectate) return;
     const n = (this.game.data.moves || []).length;
     const upd = {
       moves: arrayUnion(JSON.stringify({ n, by: this.uid, from: moveObj.from, to: moveObj.to, promotion: moveObj.promotion || null })),
@@ -434,33 +488,33 @@ export class OnlineManager {
   }
 
   async finishGame(winner, reason) {
-    if (!this.game || !this.game.data || this.game.data.status === 'finished') return;
+    if (!this.game || !this.game.data || this.game.data.status === 'finished' || this.game.spectate) return;
     await updateDoc(this.game.ref, { status: 'finished', winner, reason }).catch(() => {});
   }
 
   resign() {
-    if (!this.game) return Promise.resolve();
+    if (!this.game || this.game.spectate) return Promise.resolve();
     return this.finishGame(this.game.myColor === 'w' ? 'b' : 'w', 'resign');
   }
 
   claimTimeout() {
-    if (!this.game) return Promise.resolve();
+    if (!this.game || this.game.spectate) return Promise.resolve();
     return this.finishGame(this.game.myColor, 'timeout');
   }
 
   async offerDraw() {
-    if (!this.game) return;
+    if (!this.game || this.game.spectate) return;
     await updateDoc(this.game.ref, { drawOffer: this.uid }).catch(() => {});
   }
 
   async respondDraw(accept) {
-    if (!this.game) return;
+    if (!this.game || this.game.spectate) return;
     if (accept) await this.finishGame('draw', 'draw');
     else await updateDoc(this.game.ref, { drawOffer: null }).catch(() => {});
   }
 
   async leaveGame() {
-    if (this.game && this.game.data && this.game.data.status === 'active') {
+    if (this.game && !this.game.spectate && this.game.data && this.game.data.status === 'active') {
       await this.resign();
     }
     this._detachGame();
@@ -476,16 +530,24 @@ export class OnlineManager {
     const p = this.profile;
     p.rating += delta;
     p.games += 1;
-    if (score === 1) p.wins++;
-    else if (score === 0) p.losses++;
-    else p.draws++;
+    if (score === 1) {
+      p.wins++;
+      p.streak = (p.streak || 0) + 1;
+    } else if (score === 0) {
+      p.losses++;
+      p.streak = 0;
+    } else {
+      p.draws++;
+      p.streak = 0;
+    }
 
     await updateDoc(doc(this.db, 'chess_players', this.uid), {
       rating: p.rating,
       games: p.games,
       wins: p.wins,
       losses: p.losses,
-      draws: p.draws
+      draws: p.draws,
+      streak: p.streak
     }).catch(() => {});
     if (this.onRated) this.onRated(delta, p.rating);
   }
@@ -508,6 +570,92 @@ export class OnlineManager {
   async leaderboard(top = 10) {
     const snap = await getDocs(query(collection(this.db, 'chess_players'), where('google', '==', true), limit(100)));
     return snap.docs.map(d => ({ uid: d.id, ...d.data() })).sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, top);
+  }
+
+  /* ============ PRESENÇA, AMIGOS & DESAFIOS DIRETOS ============ */
+  async updateActive() {
+    if (!this.ready || !this.uid) return;
+    await updateDoc(doc(this.db, 'chess_players', this.uid), { lastActive: Date.now() }).catch(() => {});
+  }
+
+  async listOnlinePlayers() {
+    if (!this.ready || !this.db) return [];
+    const cutoff = Date.now() - 10 * 60 * 1000;
+    const snap = await getDocs(query(collection(this.db, 'chess_players'), where('lastActive', '>=', cutoff), limit(40)));
+    return snap.docs.map(d => ({ uid: d.id, ...d.data() })).filter(p => p.uid !== this.uid);
+  }
+
+  async addFriend(target) {
+    if (!this.ready || !this.uid || !target?.uid || target.uid === this.uid) return;
+    const now = Date.now();
+    await setDoc(doc(this.db, 'chess_players', this.uid, 'friends', target.uid), {
+      name: target.name || 'JOGADOR',
+      rating: target.rating || RATING_INICIAL,
+      addedAt: now
+    });
+  }
+
+  async listFriends() {
+    if (!this.ready || !this.uid) return [];
+    const snap = await getDocs(collection(this.db, 'chess_players', this.uid, 'friends'));
+    return snap.docs.map(d => ({ uid: d.id, ...d.data() }));
+  }
+
+  async sendChallenge(target, tc) {
+    if (!this.ready || !this.uid || !target?.uid) return;
+    await setDoc(doc(this.db, 'chess_challenges', this.uid), {
+      from: this._me(),
+      to: { uid: target.uid, name: target.name, rating: target.rating || RATING_INICIAL },
+      tc: tc || { base: 180000, inc: 2000, label: '3+2' },
+      status: 'pending',
+      gameId: null,
+      createdAt: Date.now()
+    });
+  }
+
+  listenIncomingChallenges(onChallenge) {
+    if (!this.ready || !this.uid) return () => {};
+    return onSnapshot(query(
+      collection(this.db, 'chess_challenges'),
+      where('to.uid', '==', this.uid),
+      where('status', '==', 'pending')
+    ), snap => {
+      snap.docChanges().forEach(ch => {
+        if (ch.type === 'added' || ch.type === 'modified') {
+          onChallenge({ id: ch.doc.id, ...ch.doc.data() });
+        }
+      });
+    });
+  }
+
+  listenOutgoingChallenge(onAccepted) {
+    if (!this.ready || !this.uid) return () => {};
+    return onSnapshot(doc(this.db, 'chess_challenges', this.uid), snap => {
+      if (!snap.exists()) return;
+      const d = snap.data();
+      if (d.status === 'accepted' && d.gameId) {
+        deleteDoc(doc(this.db, 'chess_challenges', this.uid)).catch(() => {});
+        onAccepted(d.gameId);
+      }
+    });
+  }
+
+  async acceptChallenge(ch) {
+    if (!this.ready) return null;
+    const gameId = this._randomId(10);
+    await setDoc(doc(this.db, 'chess_games', gameId), this._newGameDoc(ch.from, ch.to, 'active', ch.tc));
+    await updateDoc(doc(this.db, 'chess_challenges', ch.id), { status: 'accepted', gameId });
+    this._attachGame(gameId, 'b');
+    return gameId;
+  }
+
+  joinChallengeAsWhite(gameId) {
+    this._attachGame(gameId, 'w');
+  }
+
+  async declineChallenge(ch) {
+    if (!this.ready) return;
+    await deleteDoc(doc(this.db, 'chess_challenges', ch.id)).catch(() => {});
   }
 
   _randomId(len) {

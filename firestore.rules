@@ -18,6 +18,17 @@ service cloud.firestore {
                          math.abs(request.resource.data.rating - resource.data.rating) <= 64
                        );
       allow delete: if false;
+
+      match /friends/{friendUid} {
+        allow read: if true;
+        allow create, update, delete: if isOwner(uid) || (isAuthed() && request.auth.uid == friendUid);
+      }
+
+      match /achievements/{achId} {
+        allow read: if true;
+        allow create: if isOwner(uid);
+        allow update, delete: if false;
+      }
     }
 
     /* ===== Fila de matchmaking ===== */
@@ -35,6 +46,16 @@ service cloud.firestore {
         resource.data.black.uid == request.auth.uid
       );
       allow delete: if isAuthed() && resource.data.white.uid == request.auth.uid;
+    }
+
+    /* ===== Desafios Diretos ===== */
+    match /chess_challenges/{id} {
+      allow read: if isAuthed();
+      allow create: if isOwner(id);
+      allow update, delete: if isAuthed() && (
+        resource.data.from.uid == request.auth.uid ||
+        resource.data.to.uid == request.auth.uid
+      );
     }
 
     /* ===== Histórico ===== */
