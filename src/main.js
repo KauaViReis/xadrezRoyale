@@ -58,6 +58,7 @@ let plyAnalyses = [];         /* [{ classification, evalCp, mateIn, cpLoss }] */
 let boardThemeIdx = prefs.boardTheme ?? 0;
 let pieceThemeIdx = prefs.pieceTheme ?? 0;
 let pieceStyle = prefs.pieceStyle || 'staunton';
+let lightingMode = prefs.lightingMode || 'lit';
 let evalVisible = !!prefs.evalVisible;
 let nick = prefs.nick || 'JOGADOR';
 let pendingPromo = null;
@@ -90,6 +91,7 @@ function savePrefs() {
       boardTheme: boardThemeIdx,
       pieceTheme: pieceThemeIdx,
       pieceStyle,
+      lightingMode,
       aiDepth,
       evalVisible,
       muted: audio.muted,
@@ -103,7 +105,8 @@ function savePrefs() {
 
 /* ============ CENA 3D & ADAPTIVE QUALITY ============ */
 const canvas = $('#c3d');
-const { scene, camera, renderer, materials, lights, qualityTier: initTier, resize } = createScene(canvas);
+const { scene, camera, renderer, materials, lights, qualityTier: initTier, resize, setLightingMode } = createScene(canvas);
+setLightingMode(lightingMode);
 let qualityTier = initTier;
 const boardCtx = createBoard(scene, materials, qualityTier);
 const { squares } = boardCtx;
@@ -1314,9 +1317,16 @@ bindSeg('#segTcOnline', v => {
 });
 bindSeg('#segEval', v => { evalVisible = v === '1'; savePrefs(); refreshEval(); });
 
-/* Skin 3D das Peças (Staunton / Cristal / Cyber Neon) */
+/* Skin 3D das Peças (Staunton / Cristal / Cyber Neon / Medieval / Heróis) */
 bindSeg('#segPieceStyle', v => { applyPieceStyle(v); });
 document.querySelectorAll('#segPieceStyle .seg').forEach(b => b.classList.toggle('active', b.dataset.val === pieceStyle));
+
+/* Iluminação de Estúdio (Escuro / Penumbra / Estúdio) */
+bindSeg('#segLighting', v => {
+  lightingMode = setLightingMode(v);
+  savePrefs();
+});
+document.querySelectorAll('#segLighting .seg').forEach(b => b.classList.toggle('active', b.dataset.val === lightingMode));
 
 let manualQualityMode = 'auto';
 bindSeg('#segQuality', v => {

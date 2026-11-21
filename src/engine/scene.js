@@ -1,5 +1,12 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { detectHardwareTier } from './quality.js';
+
+export const LIGHTING_MODES = {
+  dark: { id: 'dark', label: '🌑 Escuro',   hemi: 0.34, sun: 0.90, fill: 0.10, rim: 0.12, exposure: 0.84 },
+  dim:  { id: 'dim',  label: '🕯️ Penumbra', hemi: 0.52, sun: 1.25, fill: 0.32, rim: 0.24, exposure: 1.00 },
+  lit:  { id: 'lit',  label: '💡 Estúdio',  hemi: 0.70, sun: 1.50, fill: 0.52, rim: 0.36, exposure: 1.15 }
+};
 
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
@@ -14,20 +21,11 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
 
-  /* Estúdio PMREM para reflexos sutis nas peças */
+  /* Estúdio PMREM com RoomEnvironment para reflexos PBR realistas */
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  envScene.background = new THREE.Color(0x181614);
-  const mkPlane = (color, x, y, z, sx, sy) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(sx, sy), new THREE.MeshBasicMaterial({ color }));
-    m.position.set(x, y, z);
-    m.lookAt(0, 0, 0);
-    envScene.add(m);
-  };
-  mkPlane(0xFFF6E8, 0, 12, 0, 14, 14);
-  mkPlane(0xD9A959, -10, 5, 6, 8, 6);
-  mkPlane(0x9AB4D6, 10, 4, -6, 8, 6);
-  scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+  const env = new RoomEnvironment();
+  scene.environment = pmrem.fromScene(env, 0.04).texture;
+  env.dispose();
   pmrem.dispose();
 
   const hemi = new THREE.HemisphereLight(0xF5EFE6, 0x1A1510, 0.65);
@@ -57,6 +55,16 @@ export function createScene(canvas) {
   rim.position.set(6, 4, -8);
   scene.add(rim);
 
+  function setLightingMode(modeId = 'lit') {
+    const cfg = LIGHTING_MODES[modeId] || LIGHTING_MODES.lit;
+    hemi.intensity = cfg.hemi;
+    sun.intensity = cfg.sun;
+    fill.intensity = qualityTier === 'low' ? 0 : cfg.fill;
+    rim.intensity = qualityTier === 'high' ? cfg.rim : 0;
+    renderer.toneMappingExposure = cfg.exposure;
+    return cfg.id;
+  }
+
   const materials = {
     lightSq: new THREE.MeshStandardMaterial({ roughness: 0.52, metalness: 0.04 }),
     darkSq:  new THREE.MeshStandardMaterial({ roughness: 0.48, metalness: 0.06 }),
@@ -72,5 +80,5 @@ export function createScene(canvas) {
     camera.updateProjectionMatrix();
   }
 
-  return { scene, camera, renderer, materials, lights: { hemi, sun, fill, rim }, qualityTier, resize };
+  return { scene, camera, renderer, materials, lights: { hemi, sun, fill, rim }, qualityTier, resize, setLightingMode };
 }
