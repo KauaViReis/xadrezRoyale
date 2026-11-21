@@ -966,6 +966,16 @@ async function runAIMove(overrideBot = null) {
   $('#turnTxt').textContent = `${bot.name.toUpperCase()} PENSANDO…`;
 
   const curPly = chess.history().length;
+  const aiColor = chess.turn();
+  if (royale.isPowersActive()) {
+    const aiE = royale.energy[aiColor] || 0;
+    if (aiE >= 3) {
+      triggerHeroPower('ultimate', aiColor);
+    } else if (aiE >= 2 && Math.random() < 0.65) {
+      triggerHeroPower('freeze', aiColor);
+    }
+  }
+
   const allowedMoves = royale.filterLegalMoves(chess.moves({ verbose: true }), curPly);
   if (allowedMoves.length === 0) {
     endGameFromBoard(chess.turn() === 'w' ? 'b' : 'w', 'Sem lances legais na Zona Royale');
@@ -1218,7 +1228,12 @@ cam.onPieceDragStart = (cx, cy) => {
   const p = hits[0].object.userData.piece;
   if (!p) return false;
   const sq = rcToSquare(p.r, p.c);
-  const moves = chess.moves({ square: sq, verbose: true });
+  if (royale.isSquareFrozen(sq, chess.history().length)) {
+    audio.error();
+    toast('❄️ Esta peça está congelada neste turno!');
+    return false;
+  }
+  const moves = royale.filterLegalMoves(chess.moves({ square: sq, verbose: true }), chess.history().length);
   if (!moves.length) return false;
 
   dragPiece = p;
@@ -1226,6 +1241,7 @@ cam.onPieceDragStart = (cx, cy) => {
   selectSquare(sq);
   return true;
 };
+
 
 cam.onPieceDragMove = (cx, cy, moved) => {
   if (!dragPiece || moved < 8) return;
@@ -1634,6 +1650,49 @@ document.querySelectorAll('.arrow-color-btn').forEach(btn => {
   };
 });
 $('#btnClearArrows').onclick = () => fx.clearManualAnnotations();
+
+/* Ativação dos Poderes de Heróis (Escudo Arcano 1⚡, Prisão de Gelo 2⚡, Trovão Royale 3⚡) */
+function triggerHeroPower(powerId, sideOverride = null) {
+  if (!gameActive || !royale.isPowersActive()) return false;
+  const side = sideOverride || (mode === 'pvp' ? chess.turn() : myColor);
+  if (chess.turn() !== side) {
+    toast('Aguarde o seu turno para ativar um Poder de Herói!');
+    return false;
+  }
+  const curPly = chess.history().length;
+  const res = royale.activatePower(powerId, chess, side, curPly, selectedSq);
+  if (!res.ok) {
+    audio.error();
+    toast(res.reason);
+    return false;
+  }
+
+  audio.promote();
+  cam.shake(0.16, 260);
+  if (res.shieldedSq) {
+    const rc = squareToRC(res.shieldedSq);
+    fx.spawnShockwave(rc.r, rc.c, 0x38BDF8);
+    fx.spawnParticles(rc.r, rc.c, 0x38BDF8, 16);
+  }
+  if (res.frozenSq) {
+    const rc = squareToRC(res.frozenSq);
+    fx.spawnLightningBolt(rc.r, rc.c, 0x60A5FA);
+    fx.spawnShockwave(rc.r, rc.c, 0x60A5FA);
+    fx.spawnParticles(rc.r, rc.c, 0x60A5FA, 18);
+  }
+  syncRoyaleVisuals();
+
+  const details = [];
+  if (res.shieldedSq) details.push(`🛡️ Escudo em ${res.shieldedSq.toUpperCase()}`);
+  if (res.frozenSq) details.push(`❄️ Gelo em ${res.frozenSq.toUpperCase()}`);
+  showEsportsBanner(`${res.power.icon} ${res.power.name.toUpperCase()}!`, details.join(' · '), powerId === 'ultimate' ? 'gold' : 'cyan', 2900);
+  narrator.speak(`${res.power.name} ativado! ${details.join(' e ')}!`, false);
+  return true;
+}
+
+if ($('#btnPowerShield')) $('#btnPowerShield').onclick = () => triggerHeroPower('shield');
+if ($('#btnPowerFreeze')) $('#btnPowerFreeze').onclick = () => triggerHeroPower('freeze');
+if ($('#btnPowerUlt')) $('#btnPowerUlt').onclick = () => triggerHeroPower('ultimate');
 
 $('#btnStartLocal').onclick = () => startMatch(mode === 'pvp' ? 'pvp' : 'pve');
 $('#btnStartBotArena').onclick = () => startMatch('botvsbot');

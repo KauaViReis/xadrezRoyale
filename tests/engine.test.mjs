@@ -386,4 +386,32 @@ test('Modo Battle Royale 3D: Zona de Colapso (8x8 -> 6x6) e Cristais de Relíqui
   assert.ok(ev12.destroyedSquares.length > 0);
 });
 
+test('Modo Heróis & Poderes: Barra de 3 Cargas ativa Escudo Arcano, Prisão de Gelo e Trovão Royale Ultimate', async () => {
+  const { RoyaleMatchManager } = await import('../src/core/royale-mode.js');
+  const rm = new RoyaleMatchManager();
+  rm.reset('heroes');
+  const c = new Chess();
+
+  // Sem energia -> falha
+  assert.equal(rm.activatePower('shield', c, 'w', 0).ok, false);
+
+  // Carrega 3 cargas
+  rm.addEnergy('w', 3);
+  assert.equal(rm.energy.w, 3);
+
+  // Ativa Ultimate (custo 3): protege melhor peça aliada (d1) e congela melhor peça inimiga (d8)
+  const ult = rm.activatePower('ultimate', c, 'w', 2);
+  assert.equal(ult.ok, true);
+  assert.equal(rm.energy.w, 0);
+  assert.equal(ult.shieldedSq, 'd1');
+  assert.equal(ult.frozenSq, 'd8');
+  assert.ok(rm.isSquareShielded('d1', 2));
+  assert.ok(rm.isSquareFrozen('d8', 2));
+
+  // Peça congelada não possui lances permitidos no ply 2
+  const filtered = rm.filterLegalMoves([{ from: 'd8', to: 'd6' }, { from: 'e7', to: 'e5' }], 2);
+  assert.equal(filtered.length, 1);
+  assert.equal(filtered[0].from, 'e7');
+});
+
 
