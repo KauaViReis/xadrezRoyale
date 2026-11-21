@@ -28,7 +28,7 @@ import { OnlineManager, isFirebaseConfigured } from './online/firebase.js';
 import { getStockfishHint } from './workers/stockfish-hint.js';
 import { detectOpening } from './core/openings.js';
 import { BOT_PROFILES, getBotById, getLeague, ACHIEVEMENTS, evaluateMatchAchievements } from './core/meta.js';
-import { TACTICAL_PUZZLES, computeMaterialBalance } from './core/puzzles.js';
+import { TACTICAL_PUZZLES, computeMaterialBalance, PuzzleRushManager } from './core/puzzles.js';
 import { VoiceNarrator } from './core/narrator.js';
 import { PiecePreviewStudio } from './engine/preview-studio.js';
 import {
@@ -48,6 +48,7 @@ const prefs = loadPrefs();
 const chess = new Chess();
 const royale = new RoyaleMatchManager();
 const towerRun = new TowerRunManager();
+const puzzleRush = new PuzzleRushManager();
 let isTowerMatch = false;
 let activeRuleset = 'classic';
 let mode = 'pve';
@@ -869,14 +870,24 @@ async function executeMove(moveInput, isRemote = false) {
 
   busy = false;
 
-  /* Validação do Modo Puzzles Táticos */
+  /* Validação do Modo Puzzles Táticos & Puzzle Rush */
   if (mode === 'puzzle' && !isRemote) {
-    const puz = TACTICAL_PUZZLES[puzzleIdx];
+    const puz = puzzleRush.active ? puzzleRush.currentPuzzle() : TACTICAL_PUZZLES[puzzleIdx];
     const expectedUci = puz?.moves?.[puzzleStep];
     const playedUci = `${move.from}${move.to}${move.promotion || ''}`;
     if (expectedUci && playedUci !== expectedUci) {
       audio.error();
-      toast('❌ Lance incorreto! Tente novamente.');
+      if (puzzleRush.active) {
+        const mRes = puzzleRush.recordMistake();
+        updatePuzzleRushHUD();
+        if (mRes.gameOver) {
+          finishPuzzleRush('Três erros cometidos (0 vidas restantes)!');
+          return true;
+        }
+        showEsportsBanner('💔 ERRO NO RUSH!', `Restam ${puzzleRush.formatHearts()} (${mRes.lives} vida(s))!`, 'danger', 2000);
+      } else {
+        toast('❌ Lance incorreto! Tente novamente.');
+      }
       setTimeout(() => {
         if (mode !== 'puzzle') return;
         chess.undo();
@@ -892,11 +903,20 @@ async function executeMove(moveInput, isRemote = false) {
       solvedPuzzles.add(puz.id);
       try { localStorage.setItem(PUZZLE_KEY, JSON.stringify([...solvedPuzzles])); } catch { /* noop */ }
       updatePuzzleSolvedUI();
-      toast(`✅ Puzzle "${puz.title}" resolvido! (${solvedPuzzles.size}/${TACTICAL_PUZZLES.length})`);
-      narrator.speak(`Excelente! Puzzle ${puz.title} resolvido!`);
-      setTimeout(() => {
-        if (mode === 'puzzle') startPuzzle((puzzleIdx + 1) % TACTICAL_PUZZLES.length);
-      }, 1500);
+      if (puzzleRush.active) {
+        const sRes = puzzleRush.recordSolve();
+        updatePuzzleRushHUD();
+        showEsportsBanner(`🔥 RUSH +1 (${sRes.score} ACERTOS)`, `Recorde Pessoal: ${sRes.bestScore} 🔥`, 'cyan', 1600);
+        setTimeout(() => {
+          if (mode === 'puzzle' && puzzleRush.active) loadRushPuzzle(sRes.nextPuzzle);
+        }, 520);
+      } else {
+        toast(`✅ Puzzle "${puz.title}" resolvido! (${solvedPuzzles.size}/${TACTICAL_PUZZLES.length})`);
+        narrator.speak(`Excelente! Puzzle ${puz.title} resolvido!`);
+        setTimeout(() => {
+          if (mode === 'puzzle') startPuzzle((puzzleIdx + 1) % TACTICAL_PUZZLES.length);
+        }, 1500);
+      }
       return true;
     }
     /* Resposta automática do oponente no puzzle */
@@ -1379,7 +1399,54 @@ function updatePuzzleSolvedUI() {
 }
 updatePuzzleSolvedUI();
 
+function updatePuzzleRushHUD() {
+  const hud = $('#puzzleRushHud');
+  if (!hud) return;
+  hud.style.display = puzzleRush.active ? 'inline-block' : 'none';
+  if ($('#btnPuzzleNext')) $('#btnPuzzleNext').style.display = puzzleRush.active ? 'none' : 'inline-block';
+  if (!puzzleRush.active) return;
+  if ($('#rushTimerTxt')) $('#rushTimerTxt').textContent = formatClock(puzzleRush.remainingMs);
+  if ($('#rushLivesTxt')) $('#rushLivesTxt').textContent = puzzleRush.formatHearts();
+  if ($('#rushScoreTxt')) $('#rushScoreTxt').textContent = String(puzzleRush.score);
+}
+
+function loadRushPuzzle(puz) {
+  if (!puz) return;
+  const idx = TACTICAL_PUZZLES.findIndex(x => x.id === puz.id);
+  puzzleIdx = idx >= 0 ? idx : 0;
+  puzzleStep = 0;
+  startMatch('puzzle', { customFen: puz.fen, puzzle: puz, isRush: true });
+  updatePuzzleRushHUD();
+  if ($('#puzzleMeta')) {
+    $('#puzzleMeta').textContent = `⚡ RUSH #${puzzleRush.score + 1} · ${puz.title} (${puz.rating})`;
+  }
+}
+
+function startPuzzleRush() {
+  const first = puzzleRush.start(180000);
+  loadRushPuzzle(first);
+  showEsportsBanner('⚡ PUZZLE RUSH INICIADO!', '3 Minutos · 3 Vidas ❤️❤️❤️ · Resolva o máximo que puder!', 'gold', 2800);
+}
+
+function finishPuzzleRush(reason = 'Fim do Puzzle Rush') {
+  puzzleRush.stop();
+  updatePuzzleRushHUD();
+  gameActive = false;
+  audio.win();
+  if ($('#overEyebrow')) $('#overEyebrow').textContent = '⚡ PUZZLE RUSH · SOBREVIVÊNCIA';
+  $('#overTitle').textContent = `🔥 ${puzzleRush.score} Puzzles Resolvidos!`;
+  $('#overSub').textContent = `${reason} · Recorde Pessoal: ${puzzleRush.bestScore} 🔥`;
+  $('#overDelta').style.display = 'none';
+  $('#rematchStatus').style.display = 'none';
+  $('#btnRematch').textContent = '⚡ JOGAR RUSH NOVAMENTE';
+  $('#btnRematch').style.display = 'block';
+  $('#btnAnalyze').style.display = 'none';
+  $('#overOverlay').classList.remove('hide');
+}
+
 function startPuzzle(idx = 0) {
+  puzzleRush.stop();
+  updatePuzzleRushHUD();
   puzzleIdx = ((idx % TACTICAL_PUZZLES.length) + TACTICAL_PUZZLES.length) % TACTICAL_PUZZLES.length;
   puzzleStep = 0;
   const puz = TACTICAL_PUZZLES[puzzleIdx];
@@ -1878,10 +1945,16 @@ function takeOverArenaSide(side) {
 $('#btnTakeWhite').onclick = () => takeOverArenaSide('w');
 $('#btnTakeBlack').onclick = () => takeOverArenaSide('b');
 
-/* Controles do Modo Puzzles */
+/* Controles do Modo Puzzles & Puzzle Rush */
+if ($('#btnStartPuzzleRush')) {
+  $('#btnStartPuzzleRush').onclick = () => {
+    audio.click();
+    startPuzzleRush();
+  };
+}
 $('#btnPuzzleHint').onclick = () => {
   if (mode !== 'puzzle') return;
-  const puz = TACTICAL_PUZZLES[puzzleIdx];
+  const puz = puzzleRush.active ? puzzleRush.currentPuzzle() : TACTICAL_PUZZLES[puzzleIdx];
   const uci = puz?.moves?.[puzzleStep];
   if (!uci) return;
   const from = uci.slice(0, 2);
@@ -1892,6 +1965,8 @@ $('#btnPuzzleHint').onclick = () => {
 };
 $('#btnPuzzleNext').onclick = () => startPuzzle((puzzleIdx + 1) % TACTICAL_PUZZLES.length);
 $('#btnPuzzleExit').onclick = () => {
+  puzzleRush.stop();
+  updatePuzzleRushHUD();
   $('#puzzleBar').style.display = 'none';
   $('#menuOverlay').classList.remove('hide');
 };
@@ -2156,6 +2231,10 @@ $('#btnRematch').onclick = async () => {
     } finally {
       btn.disabled = false;
     }
+  } else if (mode === 'puzzle') {
+    startPuzzleRush();
+  } else if (isTowerMatch) {
+    startMatch('pve', { isTower: true });
   } else {
     startMatch(mode);
   }
@@ -2500,9 +2579,9 @@ function renderUserOverview() {
   if (stats) {
     stats.innerHTML = `
       <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
-      <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
-      <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
-      <div class="stat-box"><strong>${solvedPuzzles.size}/${TACTICAL_PUZZLES.length}</strong><small>Puzzles Táticos</small></div>
+      <div class="stat-box"><strong>${games} (${wins}V)</strong><small>Partidas Online</small></div>
+      <div class="stat-box"><strong>Andar ${towerRun.bestFloor}/8</strong><small>Torre Royale (${towerRun.clears}👑)</small></div>
+      <div class="stat-box"><strong>${solvedPuzzles.size}/20 · 🔥${puzzleRush.bestScore}</strong><small>Puzzles & Rush</small></div>
     `;
   }
   if ($('#achGrid')) {
@@ -2690,6 +2769,14 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
     cam.sync();
   }
 
+  if (gameActive && mode === 'puzzle' && puzzleRush.active) {
+    const rTick = puzzleRush.tick(dt * 1000);
+    if ($('#rushTimerTxt')) $('#rushTimerTxt').textContent = formatClock(rTick.remainingMs);
+    if (rTick.timeUp) {
+      finishPuzzleRush('Tempo de 3 minutos esgotado!');
+    }
+  }
+
   if (gameActive && clockW !== null && clockB !== null) {
     const ms = dt * 1000;
     if (chess.turn() === 'w') clockW -= ms; else clockB -= ms;
@@ -2703,6 +2790,7 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
       if (sec !== lastTickSec) { audio.tick(); lastTickSec = sec; }
     }
   }
+
 
   if (!document.hidden && gameActive && dt > 0 && dt < 0.25 && qualityTier !== 'low') {
     fpsFrames++;

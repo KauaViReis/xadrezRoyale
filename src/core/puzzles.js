@@ -189,3 +189,95 @@ export const TACTICAL_PUZZLES = [
     moves: ['d1d5', 'g8h8', 'e1e8']
   }
 ];
+
+const RUSH_BEST_KEY = 'xadrezRoyale.puzzleRushBest';
+
+export class PuzzleRushManager {
+  constructor() {
+    this.active = false;
+    this.lives = 3;
+    this.maxLives = 3;
+    this.score = 0;
+    this.remainingMs = 180000;
+    this.queue = [];
+    this.cursor = 0;
+    this.bestScore = this._loadBest();
+  }
+
+  _loadBest() {
+    try {
+      return Number(localStorage.getItem(RUSH_BEST_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  _saveBest() {
+    try {
+      localStorage.setItem(RUSH_BEST_KEY, String(this.bestScore));
+    } catch {
+      /* noop */
+    }
+  }
+
+  start(durationMs = 180000) {
+    this.active = true;
+    this.lives = 3;
+    this.score = 0;
+    this.remainingMs = durationMs;
+    this.cursor = 0;
+    this.queue = [...TACTICAL_PUZZLES].sort((a, b) => a.rating - b.rating);
+    return this.currentPuzzle();
+  }
+
+  stop() {
+    this.active = false;
+  }
+
+  currentPuzzle() {
+    if (!this.queue.length) {
+      this.queue = [...TACTICAL_PUZZLES].sort((a, b) => a.rating - b.rating);
+    }
+    return this.queue[this.cursor % this.queue.length];
+  }
+
+  recordSolve() {
+    this.score++;
+    if (this.score > this.bestScore) {
+      this.bestScore = this.score;
+      this._saveBest();
+    }
+    this.cursor++;
+    return {
+      score: this.score,
+      bestScore: this.bestScore,
+      nextPuzzle: this.currentPuzzle()
+    };
+  }
+
+  recordMistake() {
+    this.lives = Math.max(0, this.lives - 1);
+    const gameOver = this.lives <= 0;
+    if (gameOver) this.active = false;
+    return {
+      lives: this.lives,
+      gameOver
+    };
+  }
+
+  tick(dtMs) {
+    if (!this.active) return { remainingMs: this.remainingMs, timeUp: false };
+    this.remainingMs = Math.max(0, this.remainingMs - dtMs);
+    const timeUp = this.remainingMs <= 0;
+    if (timeUp) this.active = false;
+    return {
+      remainingMs: this.remainingMs,
+      timeUp
+    };
+  }
+
+  formatHearts() {
+    return '❤️'.repeat(this.lives) + '🖤'.repeat(Math.max(0, this.maxLives - this.lives));
+  }
+}
+

@@ -468,4 +468,40 @@ test('Torre Royale (Roguelike PvE): 8 andares, escolha de Bênçãos e aplicaç�
   assert.equal(tr.floor, 2);
 });
 
+test('PuzzleRushManager controla 3 minutos, 3 vidas, sequência de acertos e recorde pessoal', async () => {
+  const { PuzzleRushManager } = await import('../src/core/puzzles.js');
+  const pr = new PuzzleRushManager();
+  const first = pr.start(180000);
+  assert.ok(first && first.fen);
+  assert.equal(pr.lives, 3);
+  assert.equal(pr.formatHearts(), '❤️❤️❤️');
+
+  const s1 = pr.recordSolve();
+  assert.equal(s1.score, 1);
+  assert.ok(s1.bestScore >= 1);
+
+  const m1 = pr.recordMistake();
+  assert.equal(m1.lives, 2);
+  assert.equal(m1.gameOver, false);
+  assert.equal(pr.formatHearts(), '❤️❤️🖤');
+
+  pr.recordMistake();
+  const m3 = pr.recordMistake();
+  assert.equal(m3.lives, 0);
+  assert.equal(m3.gameOver, true);
+  assert.equal(pr.active, false);
+});
+
+test('Integridade DOM: todos os seletores #id usados em src/main.js existem em index.html', async () => {
+  const fs = await import('node:fs');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const js = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  const idRefs = [...js.matchAll(/\$\('?#([a-zA-Z0-9_-]+)'?\)/g)].map(m => m[1]);
+  const missing = [];
+  for (const id of new Set(idRefs)) {
+    if (!html.includes(`id="${id}"`)) missing.push(id);
+  }
+  assert.deepEqual(missing, [], `IDs ausentes em index.html: ${missing.join(', ')}`);
+});
+
 
