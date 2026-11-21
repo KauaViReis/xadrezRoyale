@@ -200,13 +200,16 @@ export class OnlineManager {
     };
   }
 
-  _newGameDoc(white, black, status, tc) {
+  _newGameDoc(white, black, status, tc, ruleset = 'classic', initialFen = null) {
     tc = tc || { base: 300000, inc: 0, label: '5+0' };
     return {
       status,
       white,
       black,
+      ruleset: ruleset || 'classic',
+      initialFen: initialFen || null,
       moves: [],
+      powers: [],
       chat: [],
       drawOffer: null,
       winner: null,
@@ -310,11 +313,24 @@ export class OnlineManager {
     if (this.searchTimer) { clearInterval(this.searchTimer); this.searchTimer = null; }
   }
 
-  async createRoom(tc) {
+  async createRoom(tc, ruleset = 'classic', initialFen = null) {
     const code = this._randomId(6);
-    await setDoc(doc(this.db, 'chess_games', code), this._newGameDoc(this._me(), null, 'waiting', tc));
+    await setDoc(doc(this.db, 'chess_games', code), this._newGameDoc(this._me(), null, 'waiting', tc, ruleset, initialFen));
     this._attachGame(code, 'w');
     return code;
+  }
+
+  async sendPower(powerId, side, preferredSq = null) {
+    if (!this.game || this.game.spectate) return;
+    await updateDoc(this.game.ref, {
+      powers: arrayUnion(JSON.stringify({
+        powerId,
+        side,
+        preferredSq: preferredSq || null,
+        by: this.uid,
+        ts: Date.now()
+      }))
+    }).catch(() => {});
   }
 
   async joinRoom(code) {
@@ -351,6 +367,7 @@ export class OnlineManager {
   _attachGame(gameId, myColor, opts = {}) {
     this._detachGame();
     this.appliedMoves = 0;
+    this.appliedPowers = 0;
     this.appliedChat = 0;
     this.rated = false;
     const ref = doc(this.db, 'chess_games', gameId);
@@ -394,6 +411,17 @@ export class OnlineManager {
         if ((this.game.spectate || entry.by !== this.uid) && this.onOpponentMove) {
           this.onOpponentMove(entry);
         }
+      }
+
+      const powers = g.powers || [];
+      while (this.appliedPowers < powers.length) {
+        try {
+          const pw = JSON.parse(powers[this.appliedPowers]);
+          if ((this.game.spectate || pw.by !== this.uid) && this.onOpponentPower) {
+            this.onOpponentPower(pw);
+          }
+        } catch { /* noop */ }
+        this.appliedPowers++;
       }
 
       const chat = g.chat || [];

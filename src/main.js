@@ -36,6 +36,8 @@ import {
   computeFogVisibleSquares, generateChess960Fen
 } from './core/royale-mode.js';
 import { TowerRunManager, TOWER_FLOORS, TOWER_BOONS } from './core/roguelike.js';
+import { createTowerUIController } from './ui/tower-ui.js';
+import { createUserHubController } from './ui/user-hub.js';
 
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
@@ -51,6 +53,7 @@ const towerRun = new TowerRunManager();
 const puzzleRush = new PuzzleRushManager();
 let isTowerMatch = false;
 let activeRuleset = 'classic';
+let onlineRuleset = 'classic';
 let mode = 'pve';
 let aiDepth = prefs.aiDepth ?? 2;
 let playerSide = 'w';
@@ -1479,13 +1482,17 @@ function startMatch(newMode, opts = {}) {
       style: floorCfg.style || 'balanced'
     };
   } else {
-    const matchRuleset = (newMode === 'online' || newMode === 'puzzle')
+    const matchRuleset = newMode === 'puzzle'
       ? 'classic'
-      : (opts.ruleset || activeRuleset || 'classic');
+      : (newMode === 'online'
+        ? (opts.data?.ruleset || 'classic')
+        : (opts.ruleset || activeRuleset || 'classic'));
     royale.reset(matchRuleset);
 
     if (opts.customFen) {
       chess.load(opts.customFen);
+    } else if (newMode === 'online' && opts.data?.initialFen) {
+      chess.load(opts.data.initialFen);
     } else if (matchRuleset === 'chess960') {
       chess.load(generateChess960Fen());
     } else {
@@ -1792,20 +1799,29 @@ document.querySelectorAll('.arrow-color-btn').forEach(btn => {
 });
 $('#btnClearArrows').onclick = () => fx.clearManualAnnotations();
 
+bindSeg('#segOnlineRuleset', v => { onlineRuleset = v; });
+
 /* Ativação dos Poderes de Heróis (Escudo Arcano 1⚡, Prisão de Gelo 2⚡, Trovão Royale 3⚡) */
-function triggerHeroPower(powerId, sideOverride = null) {
+function triggerHeroPower(powerId, sideOverride = null, isRemote = false, preferredSqOverride = null) {
   if (!gameActive || !royale.isPowersActive()) return false;
   const side = sideOverride || (mode === 'pvp' ? chess.turn() : myColor);
-  if (chess.turn() !== side) {
+  if (!isRemote && chess.turn() !== side) {
     toast('Aguarde o seu turno para ativar um Poder de Herói!');
     return false;
   }
   const curPly = chess.history().length;
-  const res = royale.activatePower(powerId, chess, side, curPly, selectedSq);
+  const targetSq = preferredSqOverride !== null ? preferredSqOverride : selectedSq;
+  const res = royale.activatePower(powerId, chess, side, curPly, targetSq);
   if (!res.ok) {
-    audio.error();
-    toast(res.reason);
+    if (!isRemote) {
+      audio.error();
+      toast(res.reason);
+    }
     return false;
+  }
+
+  if (mode === 'online' && !isRemote && side === myColor) {
+    online.sendPower(powerId, side, targetSq);
   }
 
   audio.promote();
@@ -1842,91 +1858,19 @@ $('#btnStartPuzzles').onclick = () => {
   startPuzzle(firstUnsolved >= 0 ? firstUnsolved : 0);
 };
 
-/* ============ TORRE ROYALE (ROGUELIKE PvE DE 8 ANDARES) ============ */
-function openTowerModal(showReward = false) {
-  const cfg = towerRun.getCurrentFloorConfig();
-  if ($('#towerTitle')) $('#towerTitle').textContent = `🏰 Torre Royale — Andar ${towerRun.floor}/8`;
-  if ($('#towerRecordBadge')) {
-    $('#towerRecordBadge').textContent = `🏆 Recorde: Andar ${towerRun.bestFloor}/8 · 👑 ${towerRun.clears} Coroa(s)`;
-  }
-
-  if ($('#towerLadder')) {
-    $('#towerLadder').innerHTML = TOWER_FLOORS.map(f => {
-      const cls = f.floor < towerRun.floor ? 'done' : (f.floor === towerRun.floor ? 'current' : '');
-      return `<div class="tower-step ${cls}">
-        <strong>${f.floor < towerRun.floor ? '✓' : f.avatar}</strong>
-        <span>Andar ${f.floor}</span>
-        <small>${f.rating}</small>
-      </div>`;
-    }).join('');
-  }
-
-  if ($('#towerFloorCard')) {
-    const ruleTag = cfg.ruleset === 'royale' ? '🔥 Battle Royale 3D' : (cfg.use960 ? '🎲 Xadrez 960 + Heróis' : '⚡ Poderes de Heróis');
-    $('#towerFloorCard').innerHTML = `
-      <div>
-        <div class="modal-eyebrow">PRÓXIMO DESAFIO · ${ruleTag.toUpperCase()}</div>
-        <strong style="font-size:16px;color:#F4C96B">${cfg.avatar} Andar ${cfg.floor}: ${cfg.name} — ${cfg.guardian} (${cfg.rating} Elo)</strong>
-        <div style="font-size:12px;color:var(--text-dim);margin-top:3px">${cfg.desc}</div>
-      </div>
-    `;
-  }
-
-  if ($('#towerBoonCount')) $('#towerBoonCount').textContent = String(towerRun.boons.length);
-  if ($('#towerActiveBoons')) {
-    $('#towerActiveBoons').innerHTML = towerRun.boons.length
-      ? towerRun.boons.map(id => {
-          const b = TOWER_BOONS.find(x => x.id === id);
-          return b ? `<span class="tower-boon-chip" title="${b.desc}">${b.icon} ${b.name}</span>` : '';
-        }).join('')
-      : '<span class="status-msg" style="padding:4px 0">Vença andares para escolher Relíquias & Bênçãos permanentes!</span>';
-  }
-
-  const rewardBox = $('#towerRewardBox');
-  const rewardGrid = $('#towerRewardGrid');
-  if (rewardBox && rewardGrid) {
-    rewardBox.classList.toggle('hide', !showReward);
-    if (showReward) {
-      const choices = towerRun.getRewardChoices(3);
-      rewardGrid.innerHTML = choices.map(b => `
-        <button type="button" class="tower-reward-btn" data-boon="${b.id}">
-          <strong>${b.icon} ${b.name}</strong>
-          <small>${b.desc}</small>
-        </button>
-      `).join('');
-      rewardGrid.querySelectorAll('[data-boon]').forEach(btn => {
-        btn.onclick = () => {
-          audio.promote();
-          towerRun.addBoon(btn.dataset.boon);
-          const picked = TOWER_BOONS.find(x => x.id === btn.dataset.boon);
-          if (picked) toast(`✨ Bênção adquirida: ${picked.icon} ${picked.name}!`);
-          openTowerModal(false);
-        };
-      });
-    }
-  }
-
-  $('#overOverlay').classList.add('hide');
-  $('#towerOverlay').classList.remove('hide');
-}
-
-if ($('#btnStartTower')) $('#btnStartTower').onclick = () => { audio.click(); openTowerModal(false); };
-if ($('#btnCloseTower')) $('#btnCloseTower').onclick = () => $('#towerOverlay').classList.add('hide');
-if ($('#btnTowerReset')) {
-  $('#btnTowerReset').onclick = () => {
-    towerRun.startNewRun();
-    toast('🔄 Escalada da Torre Royale reiniciada no Andar 1!');
-    openTowerModal(false);
-  };
-}
-if ($('#btnTowerFight')) {
-  $('#btnTowerFight').onclick = () => {
-    $('#towerOverlay').classList.add('hide');
-    startMatch('pve', { isTower: true });
-    const cfg = towerRun.getCurrentFloorConfig();
-    showEsportsBanner(`🏰 ANDAR ${cfg.floor}/8 · ${cfg.name.toUpperCase()}`, `Vs ${cfg.guardian} (${cfg.rating} Elo)`, 'gold', 3000);
-  };
-}
+/* ============ TORRE ROYALE (Controlador Modular src/ui/tower-ui.js) ============ */
+const towerUI = createTowerUIController({
+  $,
+  audio,
+  towerRun,
+  TOWER_FLOORS,
+  TOWER_BOONS,
+  toast,
+  startMatch,
+  showEsportsBanner
+});
+const openTowerModal = showReward => towerUI.openTowerModal(showReward);
+towerUI.bindEvents();
 
 /* Controles da Arena Bot vs Bot + Botão Assumir Controle */
 $('#btnBotPause').onclick = () => {
@@ -2480,6 +2424,10 @@ online.onOpponentMove = entry => {
   executeMove({ from: entry.from, to: entry.to, promotion: entry.promotion || undefined }, true);
 };
 
+online.onOpponentPower = pw => {
+  triggerHeroPower(pw.powerId, pw.side, true, pw.preferredSq || null);
+};
+
 online.onDrawOffer = () => { $('#drawBar').style.display = 'flex'; };
 online.onRematchOffer = () => {
   const st = $('#rematchStatus');
@@ -2528,7 +2476,8 @@ $('#btnCancelSearch').onclick = async () => {
 };
 $('#btnCreateRoom').onclick = async () => {
   if (!(await ensureOnline())) return;
-  const code = await online.createRoom(onlineTc);
+  const initFen = onlineRuleset === 'chess960' ? generateChess960Fen() : null;
+  const code = await online.createRoom(onlineTc, onlineRuleset, initFen);
   $('#roomCodeTxt').textContent = code;
   $('#onlineActions').style.display = 'none';
   $('#roomBox').style.display = 'block';
@@ -2588,181 +2537,27 @@ $('#btnTv').onclick = async () => {
 };
 $('#btnCloseTv').onclick = () => $('#tvOverlay').classList.add('hide');
 
-/* ============ CENTRAL DO JOGADOR UNIFICADA (PERFIL + AMIGOS + RANKING) ============ */
-function renderUserOverview() {
-  const r = online.profile?.rating || 1200;
-  const lg = getLeague(r);
-  const games = online.profile?.games || 0;
-  const wins = online.profile?.wins || 0;
-  refreshTopUserPill();
-  if ($('#profBadgeIcon')) $('#profBadgeIcon').textContent = lg.icon;
-  if ($('#profTitle')) $('#profTitle').textContent = nick;
-  const banner = $('#profLeagueBanner');
-  if (banner) {
-    banner.innerHTML = `${lg.icon} <strong>Liga ${lg.name}</strong> · ${r} Elo${online.isVipDev() ? ' · 👑 VIP' : ''}`;
-  }
-  const span = lg.max === Infinity ? 1 : Math.max(1, lg.max - lg.min + 1);
-  const pct = lg.max === Infinity ? 100 : Math.min(100, Math.max(6, Math.round(((r - lg.min) / span) * 100)));
-  if ($('#profLeagueCurr')) $('#profLeagueCurr').textContent = `${lg.icon} Liga ${lg.name} (${lg.min}+ Elo)`;
-  if ($('#profLeagueNext')) {
-    $('#profLeagueNext').textContent = lg.max === Infinity ? '⚜️ Nível Máximo!' : `Próxima: ${lg.max + 1} Elo`;
-  }
-  if ($('#profLeagueFill')) $('#profLeagueFill').style.width = `${pct}%`;
-
-  const stats = $('#profStatsGrid');
-  if (stats) {
-    stats.innerHTML = `
-      <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
-      <div class="stat-box"><strong>${games} (${wins}V)</strong><small>Partidas Online</small></div>
-      <div class="stat-box"><strong>Andar ${towerRun.bestFloor}/8</strong><small>Torre Royale (${towerRun.clears}👑)</small></div>
-      <div class="stat-box"><strong>${solvedPuzzles.size}/20 · 🔥${puzzleRush.bestScore}</strong><small>Puzzles & Rush</small></div>
-    `;
-  }
-  if ($('#achGrid')) {
-    $('#achGrid').innerHTML = ACHIEVEMENTS.map(a => {
-      const unlocked = unlockedAch.has(a.id);
-      return `<div class="ach-card ${unlocked ? 'unlocked' : ''}">
-        <div class="ach-icon">${a.icon}</div>
-        <div class="ach-meta">
-          <strong>${a.name} ${unlocked ? '✓' : ''}</strong>
-          <small>${a.desc}</small>
-        </div>
-      </div>`;
-    }).join('');
-  }
-}
-
-async function loadSocialTab() {
-  $('#onlinePlayersList').innerHTML = '<div class="status-msg">Carregando jogadores…</div>';
-  $('#friendsList').innerHTML = '<div class="status-msg">Carregando amigos…</div>';
-  if (!(await ensureOnline())) {
-    $('#onlinePlayersList').innerHTML = '<div class="status-msg">Conecte-se ao modo online para ver jogadores ativos.</div>';
-    $('#friendsList').innerHTML = '<div class="status-msg">Modo online indisponível.</div>';
-    return;
-  }
-  await online.updateActive();
-  const [players, friends] = await Promise.all([
-    online.listOnlinePlayers(15),
-    online.listFriends()
-  ]);
-  const friendIds = new Set(friends.map(f => f.uid));
-
-  const renderChallengeHandlers = root => {
-    root.querySelectorAll('[data-challenge]').forEach(btn => {
-      btn.onclick = async () => {
-        const target = {
-          uid: btn.dataset.challenge,
-          name: btn.dataset.name,
-          rating: Number(btn.dataset.rating) || 1200
-        };
-        btn.disabled = true;
-        btn.textContent = '⏳ Enviado';
-        try {
-          const chId = await online.sendChallenge(target, onlineTc);
-          toast(`Desafio enviado para ${target.name}!`);
-          online.listenOutgoingChallenge(chId, async ch => {
-            if (ch.status === 'accepted' && ch.gameId) {
-              $('#profileOverlay').classList.add('hide');
-              await online.joinChallengeAsWhite(ch);
-            } else if (ch.status === 'declined') {
-              toast(`${target.name} recusou o desafio.`);
-            }
-          });
-        } catch {
-          toast('Falha ao enviar desafio');
-        }
-      };
-    });
-    root.querySelectorAll('[data-friend]').forEach(btn => {
-      btn.onclick = async () => {
-        const target = {
-          uid: btn.dataset.friend,
-          name: btn.dataset.name,
-          rating: Number(btn.dataset.rating) || 1200
-        };
-        await online.addFriend(target);
-        btn.disabled = true;
-        btn.textContent = '✓ Amigo';
-        toast(`${target.name} adicionado aos amigos!`);
-      };
-    });
-  };
-
-  $('#onlinePlayersList').innerHTML = players.map(p => {
-    const lg = getLeague(p.rating || 1200);
-    const isFr = friendIds.has(p.uid);
-    return `<div class="lb-row">
-      <div class="row-meta">
-        <strong>${lg.icon} ${p.name}</strong>
-        <small>${p.rating || 1200} Elo</small>
-      </div>
-      <div class="row-actions">
-        <button class="btn-secondary btn-mini" data-challenge="${p.uid}" data-name="${p.name}" data-rating="${p.rating || 1200}">⚔️ Desafiar</button>
-        ${isFr ? '' : `<button class="btn-secondary btn-mini" data-friend="${p.uid}" data-name="${p.name}" data-rating="${p.rating || 1200}">+ Amigo</button>`}
-      </div>
-    </div>`;
-  }).join('') || '<div class="status-msg">Nenhum outro jogador online no momento.</div>';
-
-  $('#friendsList').innerHTML = friends.map(f => {
-    const lg = getLeague(f.rating || 1200);
-    return `<div class="lb-row">
-      <div class="row-meta">
-        <strong>${lg.icon} ${f.name}</strong>
-        <small>${f.rating || 1200} Elo</small>
-      </div>
-      <div class="row-actions">
-        <button class="btn-secondary btn-mini" data-challenge="${f.uid}" data-name="${f.name}" data-rating="${f.rating || 1200}">⚔️ Desafiar</button>
-      </div>
-    </div>`;
-  }).join('') || '<div class="status-msg">Adicione jogadores da lista acima para desafiar rapidamente.</div>';
-
-  renderChallengeHandlers($('#onlinePlayersList'));
-  renderChallengeHandlers($('#friendsList'));
-}
-
-async function loadRankingTab() {
-  $('#lbList').innerHTML = '<div class="status-msg">Carregando…</div>';
-  if (!(await ensureOnline())) {
-    $('#lbList').innerHTML = '<div class="status-msg">Conecte-se ao modo online para carregar o Top 10.</div>';
-    return;
-  }
-  const list = await online.leaderboard(10);
-  $('#lbList').innerHTML = list.map((p, i) => {
-    const lg = getLeague(p.rating || 1200);
-    return `<div class="lb-row"><span>${i + 1}. ${lg.icon} ${p.name}</span><strong>${p.rating} Elo</strong></div>`;
-  }).join('') || '<div class="status-msg">Nenhum jogador no ranking ainda.</div>';
-}
-
-function openUserHub(tab = 'overview') {
-  renderUserOverview();
-  $$('#userHubTabs .studio-tab').forEach(b => b.classList.toggle('active', b.dataset.utab === tab));
-  ['overview', 'social', 'ranking'].forEach(k => {
-    const pane = $(`#utab-${k}`);
-    if (pane) {
-      const isActive = k === tab;
-      pane.classList.toggle('hide', !isActive);
-      pane.style.display = isActive ? '' : 'none';
-    }
-  });
-  $('#profileOverlay').classList.remove('hide');
-  if (tab === 'social') loadSocialTab();
-  else if (tab === 'ranking') loadRankingTab();
-}
-
-$$('#userHubTabs .studio-tab').forEach(btn => {
-  btn.onclick = () => {
-    audio.click();
-    openUserHub(btn.dataset.utab);
-  };
+/* ============ CENTRAL DO JOGADOR UNIFICADA (Controlador Modular src/ui/user-hub.js) ============ */
+const userHub = createUserHubController({
+  $,
+  $$,
+  audio,
+  online,
+  ensureOnline,
+  getLeague,
+  ACHIEVEMENTS,
+  unlockedAch,
+  solvedPuzzles,
+  TACTICAL_PUZZLES,
+  towerRun,
+  puzzleRush,
+  getNick: () => nick,
+  getOnlineTc: () => onlineTc,
+  toast
 });
+userHub.bindEvents();
+userHub.refreshTopUserPill();
 
-if ($('#btnTopUser')) $('#btnTopUser').onclick = () => { audio.click(); openUserHub('overview'); };
-$('#btnProfile').onclick = () => { audio.click(); openUserHub('overview'); };
-$('#btnSocial').onclick = () => { audio.click(); openUserHub('social'); };
-$('#btnLeaderboard').onclick = () => { audio.click(); openUserHub('ranking'); };
-$('#btnCloseProfile').onclick = () => $('#profileOverlay').classList.add('hide');
-if ($('#btnCloseSocial')) $('#btnCloseSocial').onclick = () => $('#socialOverlay').classList.add('hide');
-if ($('#btnCloseLb')) $('#btnCloseLb').onclick = () => $('#lbOverlay').classList.add('hide');
 
 
 /* ============ LOOP PRINCIPAL & FPS ADAPTATIVO ============ */
