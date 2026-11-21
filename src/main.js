@@ -33,6 +33,7 @@ import { VoiceNarrator } from './core/narrator.js';
 import { PiecePreviewStudio } from './engine/preview-studio.js';
 
 const $ = sel => document.querySelector(sel);
+const $$ = sel => document.querySelectorAll(sel);
 
 const PREFS_KEY = 'xadrezRoyale.prefs';
 const loadPrefs = () => { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } };
@@ -1594,13 +1595,14 @@ $('#btnSound').onclick = () => {
 };
 
 /* Abas do Estúdio Widescreen de Configurações */
-document.querySelectorAll('#settingsTabs .studio-tab').forEach(btn => {
+$$('#settingsTabs .studio-tab').forEach(btn => {
   btn.onclick = () => {
+    audio.click();
     const target = btn.dataset.stab;
-    document.querySelectorAll('#settingsTabs .studio-tab').forEach(b => b.classList.toggle('active', b === btn));
+    $$('#settingsTabs .studio-tab').forEach(b => b.classList.toggle('active', b === btn));
     ['visual', 'audio', 'graphics'].forEach(id => {
       const pane = $(`#stab-${id}`);
-      if (pane) pane.style.display = id === target ? 'flex' : 'none';
+      if (pane) pane.classList.toggle('hide', id !== target);
     });
   };
 });
