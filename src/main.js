@@ -206,9 +206,38 @@ let previewStudio = null;
 let previewType = 'k';
 let previewColor = 'w';
 
+const PREVIEW_PIECE_NAMES = { k: 'Rei', q: 'Dama', r: 'Torre', b: 'Bispo', n: 'Cavalo', p: 'Peão' };
+const PREVIEW_HERO_MAP = {
+  marvel_heroes: { k: 'Homem de Ferro', q: 'Feiticeira Escarlate', r: 'Thor (Mjolnir)', b: 'Dr. Estranho', n: 'Homem-Aranha', p: 'Capitão América' },
+  dc_heroes:     { k: 'Batman', q: 'Mulher-Maravilha', r: 'Superman', b: 'Lanterna Verde', n: 'The Flash', p: 'Aquaman' }
+};
+const STYLE_BADGE_LABELS = {
+  staunton: '♔ Staunton',
+  crystal: '💎 Cristal',
+  cyber: '🌆 Cyber Neon',
+  medieval: '🏰 Medieval',
+  marvel_heroes: '🛡️ Marvel',
+  dc_heroes: '🦇 DC',
+  marvel_vs_dc: '⚡ Marvel×DC'
+};
+
 function refreshPreviewStudio() {
   if (!previewStudio) return;
   previewStudio.updatePiece(previewType, previewColor, geos, PIECE_THEMES[pieceThemeIdx] || PIECE_THEMES[0], pieceStyle);
+  const badge = $('#previewHeroBadge');
+  if (badge) badge.textContent = STYLE_BADGE_LABELS[pieceStyle] || '♔ Staunton';
+  const sub = $('#previewHeroSub');
+  if (sub) {
+    const pName = PREVIEW_PIECE_NAMES[previewType] || 'Peça';
+    const sideName = previewColor === 'w' ? 'Brancas' : 'Pretas';
+    let heroTitle = '';
+    if (pieceStyle === 'marvel_heroes') heroTitle = ` · ${PREVIEW_HERO_MAP.marvel_heroes[previewType]}`;
+    else if (pieceStyle === 'dc_heroes') heroTitle = ` · ${PREVIEW_HERO_MAP.dc_heroes[previewType]}`;
+    else if (pieceStyle === 'marvel_vs_dc') {
+      heroTitle = ` · ${(previewColor === 'w' ? PREVIEW_HERO_MAP.marvel_heroes : PREVIEW_HERO_MAP.dc_heroes)[previewType]}`;
+    }
+    sub.textContent = `${pName}${heroTitle} (${sideName}) · 360°`;
+  }
 }
 
 function applyPieceTheme(i) {
@@ -1140,16 +1169,22 @@ function startMatch(newMode, opts = {}) {
   if (arenaBar) arenaBar.style.display = mode === 'botvsbot' ? 'flex' : 'none';
   if (puzzleBar) puzzleBar.style.display = mode === 'puzzle' ? 'flex' : 'none';
 
+  const myLeagueIcon = getLeague(online.profile?.rating || 1200).icon;
   if (mode === 'online') {
     myColor = opts.myColor || 'w';
     if (opts.spectate && opts.data) {
       $('#nameW').textContent = opts.data.white?.name || 'BRANCAS';
       $('#nameB').textContent = opts.data.black?.name || 'PRETAS';
+      if ($('#avatarW')) $('#avatarW').textContent = getLeague(opts.data.white?.rating || 1200).icon;
+      if ($('#avatarB')) $('#avatarB').textContent = getLeague(opts.data.black?.rating || 1200).icon;
     } else {
       const oppName = opts.opponent?.name || 'OPONENTE';
       const myName = online.profile?.name || nick;
+      const oppIcon = getLeague(opts.opponent?.rating || 1200).icon;
       $('#nameW').textContent = myColor === 'w' ? myName : oppName;
       $('#nameB').textContent = myColor === 'b' ? myName : oppName;
+      if ($('#avatarW')) $('#avatarW').textContent = myColor === 'w' ? myLeagueIcon : oppIcon;
+      if ($('#avatarB')) $('#avatarB').textContent = myColor === 'b' ? myLeagueIcon : oppIcon;
     }
     clockW = opts.tc?.base || 300000;
     clockB = opts.tc?.base || 300000;
@@ -1157,8 +1192,10 @@ function startMatch(newMode, opts = {}) {
   } else if (mode === 'botvsbot') {
     const bw = getBotById(botWhiteId);
     const bb = getBotById(botBlackId);
-    $('#nameW').textContent = `${bw.avatar} ${bw.name.toUpperCase()} (${bw.rating})`;
-    $('#nameB').textContent = `${bb.avatar} ${bb.name.toUpperCase()} (${bb.rating})`;
+    $('#nameW').textContent = `${bw.name.toUpperCase()} (${bw.rating})`;
+    $('#nameB').textContent = `${bb.name.toUpperCase()} (${bb.rating})`;
+    if ($('#avatarW')) $('#avatarW').textContent = bw.avatar;
+    if ($('#avatarB')) $('#avatarB').textContent = bb.avatar;
     clockW = null;
     clockB = null;
     if ($('#btnBotPause')) $('#btnBotPause').textContent = '⏸ Pausar';
@@ -1167,8 +1204,10 @@ function startMatch(newMode, opts = {}) {
     const puz = opts.puzzle || TACTICAL_PUZZLES[puzzleIdx];
     const side = chess.turn();
     myColor = side;
-    $('#nameW').textContent = side === 'w' ? 'VOCÊ (PUZZLE)' : 'OPONENTE';
-    $('#nameB').textContent = side === 'b' ? 'VOCÊ (PUZZLE)' : 'OPONENTE';
+    $('#nameW').textContent = side === 'w' ? 'VOCÊ (PUZZLE)' : 'DESAFIO TÁTICO';
+    $('#nameB').textContent = side === 'b' ? 'VOCÊ (PUZZLE)' : 'DESAFIO TÁTICO';
+    if ($('#avatarW')) $('#avatarW').textContent = side === 'w' ? '🧩' : '♚';
+    if ($('#avatarB')) $('#avatarB').textContent = side === 'b' ? '🧩' : '♔';
     if ($('#puzzleMeta')) {
       $('#puzzleMeta').textContent = `🧩 #${puzzleIdx + 1}/${TACTICAL_PUZZLES.length} · ${puz.title} (${puz.theme} · ${puz.rating})`;
     }
@@ -1178,9 +1217,11 @@ function startMatch(newMode, opts = {}) {
   } else {
     myColor = playerSide;
     const bot = currentBotProfile();
-    const botLabel = `${bot.avatar} ${bot.name.toUpperCase()} (${bot.rating})`;
-    $('#nameW').textContent = mode === 'pve' && playerSide === 'b' ? botLabel : 'BRANCAS';
-    $('#nameB').textContent = mode === 'pve' && playerSide === 'w' ? botLabel : 'PRETAS';
+    const botLabel = `${bot.name.toUpperCase()} (${bot.rating})`;
+    $('#nameW').textContent = mode === 'pve' && playerSide === 'b' ? botLabel : (mode === 'pve' ? nick : 'BRANCAS');
+    $('#nameB').textContent = mode === 'pve' && playerSide === 'w' ? botLabel : (mode === 'pve' ? nick : 'PRETAS');
+    if ($('#avatarW')) $('#avatarW').textContent = mode === 'pve' && playerSide === 'b' ? bot.avatar : (mode === 'pve' ? myLeagueIcon : '♔');
+    if ($('#avatarB')) $('#avatarB').textContent = mode === 'pve' && playerSide === 'w' ? bot.avatar : (mode === 'pve' ? myLeagueIcon : '♚');
     clockW = localTimeLimit > 0 ? localTimeLimit : null;
     clockB = localTimeLimit > 0 ? localTimeLimit : null;
     cam.resetView(mode === 'pve' ? playerSide : 'w');
@@ -1454,7 +1495,23 @@ $('#btnLoadFen').onclick = () => {
   }
 };
 
-/* Chat ao Vivo por Partida + Reações Rápidas (Emotes) */
+/* Gaveta Lateral Unificada (Abas: 📜 Lances | 💬 Chat) & Chat ao Vivo */
+let activeDockTab = 'moves';
+function setDockTab(tab = 'moves') {
+  activeDockTab = tab === 'chat' ? 'chat' : 'moves';
+  if ($('#tabDockMoves')) $('#tabDockMoves').classList.toggle('active', activeDockTab === 'moves');
+  if ($('#tabDockChat')) $('#tabDockChat').classList.toggle('active', activeDockTab === 'chat');
+  if ($('#dockPaneMoves')) $('#dockPaneMoves').style.display = activeDockTab === 'moves' ? 'flex' : 'none';
+  if ($('#dockPaneChat')) $('#dockPaneChat').style.display = activeDockTab === 'chat' ? 'flex' : 'none';
+  if (activeDockTab === 'chat') {
+    if ($('#chatUnread')) $('#chatUnread').style.display = 'none';
+    if ($('#chatUnreadInline')) $('#chatUnreadInline').style.display = 'none';
+    if ($('#chatBox')) $('#chatBox').classList.add('open');
+  }
+}
+if ($('#tabDockMoves')) $('#tabDockMoves').onclick = () => setDockTab('moves');
+if ($('#tabDockChat')) $('#tabDockChat').onclick = () => setDockTab('chat');
+
 function appendChatMessage(msg, isMe = false) {
   const box = $('#chatMessages');
   if (!box) return;
@@ -1473,8 +1530,9 @@ function appendChatMessage(msg, isMe = false) {
   box.scrollTop = box.scrollHeight;
   if (!isMe) {
     audio.chat();
-    if (!$('#chatBox').classList.contains('open')) {
-      $('#chatUnread').style.display = 'block';
+    if (activeDockTab !== 'chat') {
+      if ($('#chatUnread')) $('#chatUnread').style.display = 'block';
+      if ($('#chatUnreadInline')) $('#chatUnreadInline').style.display = 'inline-block';
       toast(`💬 ${msg.name}: ${msg.text}`, 2200);
     }
   }
@@ -1491,12 +1549,10 @@ function sendChatText(text, isEmote = false) {
 }
 
 $('#btnChat').onclick = () => {
-  const box = $('#chatBox');
-  const opening = !box.classList.contains('open');
-  box.classList.toggle('open', opening);
-  if (opening) $('#chatUnread').style.display = 'none';
+  $('#historyBox').classList.add('open');
+  setDockTab('chat');
 };
-$('#btnCloseChat').onclick = () => $('#chatBox').classList.remove('open');
+if ($('#btnCloseChat')) $('#btnCloseChat').onclick = () => setDockTab('moves');
 $('#chatForm').onsubmit = e => {
   e.preventDefault();
   const inp = $('#chatInput');
@@ -1536,9 +1592,22 @@ $('#btnSound').onclick = () => {
   $('#btnSound').setAttribute('aria-pressed', String(audio.muted));
   savePrefs();
 };
+
+/* Abas do Estúdio Widescreen de Configurações */
+document.querySelectorAll('#settingsTabs .studio-tab').forEach(btn => {
+  btn.onclick = () => {
+    const target = btn.dataset.stab;
+    document.querySelectorAll('#settingsTabs .studio-tab').forEach(b => b.classList.toggle('active', b === btn));
+    ['visual', 'audio', 'graphics'].forEach(id => {
+      const pane = $(`#stab-${id}`);
+      if (pane) pane.style.display = id === target ? 'flex' : 'none';
+    });
+  };
+});
+
 bindSeg('#segPreviewType', v => { previewType = v; refreshPreviewStudio(); });
 bindSeg('#segPreviewColor', v => { previewColor = v; refreshPreviewStudio(); });
-$('#btnSettings').onclick = () => {
+function openSettingsStudio() {
   $('#settingsOverlay').classList.remove('hide');
   const pCanvas = $('#piecePreviewCanvas');
   if (pCanvas && !previewStudio) {
@@ -1546,12 +1615,18 @@ $('#btnSettings').onclick = () => {
   }
   refreshPreviewStudio();
   previewStudio?.start();
-};
-$('#btnCloseSettings').onclick = () => {
+}
+function closeSettingsStudio() {
   $('#settingsOverlay').classList.add('hide');
   previewStudio?.stop();
+}
+$('#btnSettings').onclick = openSettingsStudio;
+$('#btnCloseSettings').onclick = closeSettingsStudio;
+if ($('#btnCloseSettingsTop')) $('#btnCloseSettingsTop').onclick = closeSettingsStudio;
+$('#btnHistoryToggle').onclick = () => {
+  $('#historyBox').classList.toggle('open');
+  setDockTab('moves');
 };
-$('#btnHistoryToggle').onclick = () => $('#historyBox').classList.toggle('open');
 
 $('#btnHistFirst').onclick = () => goToPly(0);
 $('#btnHistPrev').onclick = () => goToPly((reviewPly !== null ? reviewPly : chess.history().length) - 1);
@@ -1770,12 +1845,22 @@ PIECE_THEMES.forEach((t, i) => {
   $('#pieceSwatches').appendChild(b);
 });
 
-/* ============ ONLINE BINDINGS, TV, SOCIAL & PERFIL ============ */
+/* ============ ONLINE BINDINGS, TV, SOCIAL & CENTRAL DO JOGADOR ============ */
+function refreshTopUserPill() {
+  const r = online.profile?.rating || 1200;
+  const lg = getLeague(r);
+  if ($('#topUserIcon')) $('#topUserIcon').textContent = lg.icon;
+  if ($('#topUserNick')) $('#topUserNick').textContent = nick;
+  if ($('#topUserElo')) $('#topUserElo').textContent = r;
+}
+
 $('#nickInput').value = nick;
+refreshTopUserPill();
 $('#nickInput').onchange = () => {
   nick = ($('#nickInput').value.trim() || 'JOGADOR').toUpperCase().slice(0, 16);
   $('#nickInput').value = nick;
   savePrefs();
+  refreshTopUserPill();
   if (online.ready) online.setName(nick);
 };
 
@@ -1827,6 +1912,7 @@ async function ensureOnline() {
       if (ok) {
         $('#onlineStatus').style.display = 'none';
         $('#ratingLine').textContent = formatRatingLeague(online.profile.rating);
+        refreshTopUserPill();
         if (online.profile.google) $('#btnGoogle').textContent = '✓ Google Conectado';
         online.updateActive();
         setupChallengeListener();
@@ -1870,6 +1956,7 @@ online.onRematchOffer = () => {
 online.onGameEnd = (winner, reason) => { endGameFromBoard(winner, reason); };
 online.onRated = (delta, newRating) => {
   $('#ratingLine').textContent = formatRatingLeague(newRating);
+  refreshTopUserPill();
   $('#overDelta').style.display = 'block';
   $('#overDelta').textContent = `${delta >= 0 ? '+' : ''}${delta} Elo (${newRating})`;
 };
@@ -1882,6 +1969,7 @@ $('#btnGoogle').onclick = async () => {
       toast(res.msg);
       $('#btnGoogle').textContent = '✓ Google Conectado';
       $('#ratingLine').textContent = formatRatingLeague(online.profile.rating);
+      refreshTopUserPill();
       updateTurnUI();
       refreshEval();
     }
@@ -1926,17 +2014,6 @@ $('#btnJoinRoom').onclick = async () => {
   try { await online.joinRoom($('#joinInput').value); }
   catch (e) { toast(e.message || 'Erro ao entrar'); }
 };
-$('#btnLeaderboard').onclick = async () => {
-  if (!(await ensureOnline())) return;
-  $('#lbOverlay').classList.remove('hide');
-  $('#lbList').innerHTML = '<div class="status-msg">Carregando…</div>';
-  const list = await online.leaderboard(10);
-  $('#lbList').innerHTML = list.map((p, i) => {
-    const lg = getLeague(p.rating || 1200);
-    return `<div class="lb-row"><span>${i + 1}. ${lg.icon} ${p.name}</span><strong>${p.rating}</strong></div>`;
-  }).join('') || '<div class="status-msg">Nenhum jogador no ranking ainda.</div>';
-};
-$('#btnCloseLb').onclick = () => $('#lbOverlay').classList.add('hide');
 
 /* TV Xadrez Royale (Modo Espectador Ao Vivo) */
 $('#btnTv').onclick = async () => {
@@ -1974,14 +2051,59 @@ $('#btnTv').onclick = async () => {
 };
 $('#btnCloseTv').onclick = () => $('#tvOverlay').classList.add('hide');
 
-/* Amigos & Desafios Diretos */
-$('#btnSocial').onclick = async () => {
-  if (!(await ensureOnline())) return;
-  $('#socialOverlay').classList.remove('hide');
+/* ============ CENTRAL DO JOGADOR UNIFICADA (PERFIL + AMIGOS + RANKING) ============ */
+function renderUserOverview() {
+  const r = online.profile?.rating || 1200;
+  const lg = getLeague(r);
+  const games = online.profile?.games || 0;
+  const wins = online.profile?.wins || 0;
+  refreshTopUserPill();
+  if ($('#profBadgeIcon')) $('#profBadgeIcon').textContent = lg.icon;
+  if ($('#profTitle')) $('#profTitle').textContent = nick;
+  const banner = $('#profLeagueBanner');
+  if (banner) {
+    banner.innerHTML = `${lg.icon} <strong>Liga ${lg.name}</strong> · ${r} Elo${online.isVipDev() ? ' · 👑 VIP' : ''}`;
+  }
+  const span = lg.max === Infinity ? 1 : Math.max(1, lg.max - lg.min + 1);
+  const pct = lg.max === Infinity ? 100 : Math.min(100, Math.max(6, Math.round(((r - lg.min) / span) * 100)));
+  if ($('#profLeagueCurr')) $('#profLeagueCurr').textContent = `${lg.icon} Liga ${lg.name} (${lg.min}+ Elo)`;
+  if ($('#profLeagueNext')) {
+    $('#profLeagueNext').textContent = lg.max === Infinity ? '⚜️ Nível Máximo!' : `Próxima: ${lg.max + 1} Elo`;
+  }
+  if ($('#profLeagueFill')) $('#profLeagueFill').style.width = `${pct}%`;
+
+  const stats = $('#profStatsGrid');
+  if (stats) {
+    stats.innerHTML = `
+      <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
+      <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
+      <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
+      <div class="stat-box"><strong>${solvedPuzzles.size}/${TACTICAL_PUZZLES.length}</strong><small>Puzzles Táticos</small></div>
+    `;
+  }
+  if ($('#achGrid')) {
+    $('#achGrid').innerHTML = ACHIEVEMENTS.map(a => {
+      const unlocked = unlockedAch.has(a.id);
+      return `<div class="ach-card ${unlocked ? 'unlocked' : ''}">
+        <div class="ach-icon">${a.icon}</div>
+        <div class="ach-meta">
+          <strong>${a.name} ${unlocked ? '✓' : ''}</strong>
+          <small>${a.desc}</small>
+        </div>
+      </div>`;
+    }).join('');
+  }
+}
+
+async function loadSocialTab() {
   $('#onlinePlayersList').innerHTML = '<div class="status-msg">Carregando jogadores…</div>';
   $('#friendsList').innerHTML = '<div class="status-msg">Carregando amigos…</div>';
+  if (!(await ensureOnline())) {
+    $('#onlinePlayersList').innerHTML = '<div class="status-msg">Conecte-se ao modo online para ver jogadores ativos.</div>';
+    $('#friendsList').innerHTML = '<div class="status-msg">Modo online indisponível.</div>';
+    return;
+  }
   await online.updateActive();
-
   const [players, friends] = await Promise.all([
     online.listOnlinePlayers(15),
     online.listFriends()
@@ -2003,6 +2125,7 @@ $('#btnSocial').onclick = async () => {
           toast(`Desafio enviado para ${target.name}!`);
           online.listenOutgoingChallenge(chId, async ch => {
             if (ch.status === 'accepted' && ch.gameId) {
+              $('#profileOverlay').classList.add('hide');
               await online.joinChallengeAsWhite(ch);
             } else if (ch.status === 'declined') {
               toast(`${target.name} recusou o desafio.`);
@@ -2058,41 +2181,48 @@ $('#btnSocial').onclick = async () => {
 
   renderChallengeHandlers($('#onlinePlayersList'));
   renderChallengeHandlers($('#friendsList'));
-};
-$('#btnCloseSocial').onclick = () => $('#socialOverlay').classList.add('hide');
+}
 
-/* Modal de Perfil, Ligas & Conquistas */
-$('#btnProfile').onclick = () => {
-  const r = online.profile?.rating || 1200;
-  const lg = getLeague(r);
-  const games = online.profile?.games || 0;
-  const wins = online.profile?.wins || 0;
-  if ($('#profTitle')) $('#profTitle').textContent = nick;
-  const banner = $('#profLeagueBanner');
-  if (banner) {
-    banner.innerHTML = `${lg.icon} <strong>Liga ${lg.name}</strong> · ${r} Elo · Próxima: ${lg.max === Infinity ? 'Nível Máximo!' : `${lg.max + 1} Elo`}`;
+async function loadRankingTab() {
+  $('#lbList').innerHTML = '<div class="status-msg">Carregando…</div>';
+  if (!(await ensureOnline())) {
+    $('#lbList').innerHTML = '<div class="status-msg">Conecte-se ao modo online para carregar o Top 10.</div>';
+    return;
   }
-  const stats = $('#profStatsGrid');
-  if (stats) {
-    stats.innerHTML = `
-      <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
-      <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
-      <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
-    `;
-  }
-  $('#achGrid').innerHTML = ACHIEVEMENTS.map(a => {
-    const unlocked = unlockedAch.has(a.id);
-    return `<div class="ach-card ${unlocked ? 'unlocked' : ''}">
-      <div class="ach-icon">${a.icon}</div>
-      <div class="ach-meta">
-        <strong>${a.name} ${unlocked ? '✓' : ''}</strong>
-        <small>${a.desc}</small>
-      </div>
-    </div>`;
-  }).join('');
+  const list = await online.leaderboard(10);
+  $('#lbList').innerHTML = list.map((p, i) => {
+    const lg = getLeague(p.rating || 1200);
+    return `<div class="lb-row"><span>${i + 1}. ${lg.icon} ${p.name}</span><strong>${p.rating} Elo</strong></div>`;
+  }).join('') || '<div class="status-msg">Nenhum jogador no ranking ainda.</div>';
+}
+
+function openUserHub(tab = 'overview') {
+  renderUserOverview();
+  $$('#userHubTabs .studio-tab').forEach(b => b.classList.toggle('active', b.dataset.utab === tab));
+  ['overview', 'social', 'ranking'].forEach(k => {
+    const pane = $(`#utab-${k}`);
+    if (pane) pane.classList.toggle('hide', k !== tab);
+  });
   $('#profileOverlay').classList.remove('hide');
-};
+  if (tab === 'social') loadSocialTab();
+  else if (tab === 'ranking') loadRankingTab();
+}
+
+$$('#userHubTabs .studio-tab').forEach(btn => {
+  btn.onclick = () => {
+    audio.click();
+    openUserHub(btn.dataset.utab);
+  };
+});
+
+if ($('#btnTopUser')) $('#btnTopUser').onclick = () => { audio.click(); openUserHub('overview'); };
+$('#btnProfile').onclick = () => { audio.click(); openUserHub('overview'); };
+$('#btnSocial').onclick = () => { audio.click(); openUserHub('social'); };
+$('#btnLeaderboard').onclick = () => { audio.click(); openUserHub('ranking'); };
 $('#btnCloseProfile').onclick = () => $('#profileOverlay').classList.add('hide');
+if ($('#btnCloseSocial')) $('#btnCloseSocial').onclick = () => $('#socialOverlay').classList.add('hide');
+if ($('#btnCloseLb')) $('#btnCloseLb').onclick = () => $('#lbOverlay').classList.add('hide');
+
 
 /* ============ LOOP PRINCIPAL & FPS ADAPTATIVO ============ */
 applyBoardTheme(boardThemeIdx);

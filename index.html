@@ -31,11 +31,16 @@
     </div>
 
     <div class="hud-right">
+      <button type="button" class="user-pill panel-glass" id="btnTopUser" aria-label="Abrir perfil e clube" title="Central do Jogador & Ligas">
+        <span class="user-pill-icon" id="topUserIcon">🥈</span>
+        <span class="user-pill-nick" id="topUserNick">JOGADOR</span>
+        <span class="user-pill-elo" id="topUserElo">1200</span>
+      </button>
       <button type="button" class="icon-btn panel-glass" id="btnArrows" aria-label="Modo desenhar setas" aria-pressed="false" title="Modo Desenhar Setas (✎)">✎</button>
       <button type="button" class="icon-btn panel-glass" id="btnView2D" aria-label="Alternar vista 2D" aria-pressed="false" title="Alternar Vista 3D / 2D (V)">2D</button>
       <button type="button" class="icon-btn panel-glass" id="btnFlip" aria-label="Girar tabuleiro" title="Girar Tabuleiro (F)">⇅</button>
       <button type="button" class="icon-btn panel-glass" id="btnSound" aria-label="Alternar som" aria-pressed="false" title="Som (M)">🔊</button>
-      <button type="button" class="icon-btn panel-glass" id="btnSettings" aria-label="Configurações" title="Aparência & Qualidade">⚙</button>
+      <button type="button" class="icon-btn panel-glass" id="btnSettings" aria-label="Configurações" title="Estúdio 3D & Configurações">⚙</button>
     </div>
   </header>
 
@@ -48,10 +53,10 @@
     <button type="button" class="mini-btn" id="btnClearArrows" aria-label="Limpar setas">Limpar</button>
   </div>
 
-  <!-- JOGADORES & RELÓGIOS -->
+  <!-- JOGADORES & RELÓGIOS (COM AVATAR & BADGE DE MATERIAL) -->
   <section class="players-bar">
     <div class="player-card panel-glass" id="cardW">
-      <div class="p-color white"></div>
+      <div class="p-avatar white" id="avatarW">♔</div>
       <div class="p-meta">
         <span class="p-name" id="nameW">BRANCAS</span>
         <div class="p-caps-row">
@@ -63,7 +68,7 @@
     </div>
 
     <div class="player-card panel-glass" id="cardB">
-      <div class="p-color black"></div>
+      <div class="p-avatar black" id="avatarB">♚</div>
       <div class="p-meta">
         <span class="p-name" id="nameB">PRETAS</span>
         <div class="p-caps-row">
@@ -83,52 +88,59 @@
     <span class="eval-num" id="evalNum">0.0</span>
   </aside>
 
-  <!-- HISTÓRICO SAN & ANÁLISE + PGN/FEN -->
-  <aside class="history-box panel-glass" id="historyBox">
-    <div class="hist-header-row">
-      <span class="hist-head">LANCES</span>
-      <button type="button" class="hist-live-badge hide" id="liveBanner" style="display:none">Voltar ao vivo</button>
+  <!-- GAVETA LATERAL UNIFICADA (ABAS: 📜 LANCES | 💬 CHAT) -->
+  <aside class="history-box side-dock panel-glass" id="historyBox">
+    <div class="dock-tabs">
+      <button type="button" class="dock-tab active" data-dock="moves" id="tabDockMoves">📜 LANCES</button>
+      <button type="button" class="dock-tab" data-dock="chat" id="tabDockChat">
+        💬 CHAT <span class="chat-dot-inline" id="chatUnreadInline" style="display:none"></span>
+      </button>
+      <button type="button" class="hist-live-badge hide" id="liveBanner" style="display:none">Ao vivo</button>
     </div>
-    <div class="opening-badge" id="openingBadge" style="display:none"></div>
-    <div class="analysis-panel" id="analysisPanel" style="display:none">
-      <div class="analysis-summary" id="analysisSummary"></div>
-      <svg class="eval-graph" id="evalGraph" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+
+    <!-- PAINEL DE LANCES / ABERTURAS / ANÁLISE / PGN / FEN -->
+    <div class="dock-pane" id="dockPaneMoves">
+      <div class="opening-badge" id="openingBadge" style="display:none"></div>
+      <div class="analysis-panel" id="analysisPanel" style="display:none">
+        <div class="analysis-summary" id="analysisSummary"></div>
+        <svg class="eval-graph" id="evalGraph" viewBox="0 0 200 48" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="hist-list" id="histList"></div>
+      <div class="hist-nav" id="histNav">
+        <button type="button" class="nav-btn" id="btnHistFirst" aria-label="Primeiro lance" title="Início (Home)">|&lt;</button>
+        <button type="button" class="nav-btn" id="btnHistPrev" aria-label="Lance anterior" title="Anterior (←)">&lt;</button>
+        <button type="button" class="nav-btn" id="btnHistNext" aria-label="Próximo lance" title="Próximo (→)">&gt;</button>
+        <button type="button" class="nav-btn" id="btnHistLast" aria-label="Lance atual" title="Atual (End)">&gt;|</button>
+      </div>
+      <div class="hist-io-row">
+        <button type="button" class="nav-btn" id="btnCopyPgn" title="Copiar PGN da partida">📋 PGN</button>
+        <button type="button" class="nav-btn" id="btnCopyFen" title="Copiar FEN atual">📋 FEN</button>
+        <button type="button" class="nav-btn" id="btnLoadFen" title="Carregar posição FEN">📥 FEN</button>
+      </div>
     </div>
-    <div class="hist-list" id="histList"></div>
-    <div class="hist-nav" id="histNav">
-      <button type="button" class="nav-btn" id="btnHistFirst" aria-label="Primeiro lance" title="Início (Home)">|&lt;</button>
-      <button type="button" class="nav-btn" id="btnHistPrev" aria-label="Lance anterior" title="Anterior (←)">&lt;</button>
-      <button type="button" class="nav-btn" id="btnHistNext" aria-label="Próximo lance" title="Próximo (→)">&gt;</button>
-      <button type="button" class="nav-btn" id="btnHistLast" aria-label="Lance atual" title="Atual (End)">&gt;|</button>
-    </div>
-    <div class="hist-io-row">
-      <button type="button" class="nav-btn" id="btnCopyPgn" title="Copiar PGN da partida">📋 PGN</button>
-      <button type="button" class="nav-btn" id="btnCopyFen" title="Copiar FEN atual">📋 FEN</button>
-      <button type="button" class="nav-btn" id="btnLoadFen" title="Carregar posição FEN">📥 FEN</button>
+
+    <!-- PAINEL DE CHAT AO VIVO & EMOTES -->
+    <div class="dock-pane" id="dockPaneChat" style="display:none">
+      <div class="chat-messages" id="chatMessages">
+        <div class="chat-empty">Envie uma mensagem ou reação rápida!</div>
+      </div>
+      <div class="chat-emotes" id="chatEmotes">
+        <button type="button" class="emote-btn" data-emote="👏 Boa jogada!">👏</button>
+        <button type="button" class="emote-btn" data-emote="😱 Que lance!">😱</button>
+        <button type="button" class="emote-btn" data-emote="🤔 Pensando...">🤔</button>
+        <button type="button" class="emote-btn" data-emote="🔥 Revanche?">🔥</button>
+        <button type="button" class="emote-btn" data-emote="🤝 Bom jogo!">🤝</button>
+      </div>
+      <form class="chat-form" id="chatForm">
+        <input type="text" id="chatInput" class="txt-input chat-input" maxlength="140" placeholder="Digite aqui…" autocomplete="off">
+        <button type="submit" class="mini-btn prim">Enviar</button>
+      </form>
     </div>
   </aside>
 
-  <!-- CHAT AO VIVO DA PARTIDA + REAÇÕES RÁPIDAS -->
-  <aside class="chat-box panel-glass" id="chatBox">
-    <div class="hist-header-row">
-      <span class="hist-head">💬 CHAT DA SALA</span>
-      <button type="button" class="hint-dismiss" id="btnCloseChat" aria-label="Fechar chat">✕</button>
-    </div>
-    <div class="chat-messages" id="chatMessages">
-      <div class="chat-empty">Envie uma mensagem ou reação rápida!</div>
-    </div>
-    <div class="chat-emotes" id="chatEmotes">
-      <button type="button" class="emote-btn" data-emote="👏 Boa jogada!">👏</button>
-      <button type="button" class="emote-btn" data-emote="😱 Que lance!">😱</button>
-      <button type="button" class="emote-btn" data-emote="🤔 Pensando...">🤔</button>
-      <button type="button" class="emote-btn" data-emote="🔥 Revanche?">🔥</button>
-      <button type="button" class="emote-btn" data-emote="🤝 Bom jogo!">🤝</button>
-    </div>
-    <form class="chat-form" id="chatForm">
-      <input type="text" id="chatInput" class="txt-input chat-input" maxlength="140" placeholder="Digite aqui…" autocomplete="off">
-      <button type="submit" class="mini-btn prim">Enviar</button>
-    </form>
-  </aside>
+  <!-- Container de compatibilidade #chatBox para toggles diretos -->
+  <div id="chatBox" style="display:none"></div>
+  <button type="button" id="btnCloseChat" style="display:none"></button>
 
   <!-- BARRA FLUTUANTE: ARENA BOT VS BOT -->
   <div class="arena-bar panel-glass" id="botArenaBar" style="display:none">
@@ -195,7 +207,7 @@
     </div>
   </div>
 
-  <!-- MENU PRINCIPAL -->
+  <!-- MENU PRINCIPAL (TELA INICIAL PRESERVADA) -->
   <div class="overlay" id="menuOverlay">
     <div class="modal panel-glass menu-card">
       <div class="menu-header">
@@ -206,7 +218,7 @@
             <h1 class="hero-title">Xadrez Royale</h1>
           </div>
         </div>
-        <p class="hero-sub">Skins 3D (Staunton, Cristal & Cyber), Stockfish 19, Bot vs Bot, Puzzles e Online.</p>
+        <p class="hero-sub">Skins 3D (Staunton, Cristal, Cyber & Heróis), Stockfish 19, Bot vs Bot, Puzzles e Online.</p>
       </div>
 
       <button type="button" class="btn full" id="btnResumeGame" style="display:none">▶ RETOMAR PARTIDA</button>
@@ -337,105 +349,147 @@
     </div>
   </div>
 
-  <!-- CONFIGURAÇÕES DE APARÊNCIA -->
+  <!-- ESTÚDIO DE CONFIGURAÇÕES WIDESCREEN (2 COLUNAS + 3 ABAS) -->
   <div class="overlay hide" id="settingsOverlay">
-    <div class="modal panel-glass">
-      <div class="modal-eyebrow">ESTÚDIO 3D & RÁDIO</div>
-      <h2 class="modal-title">Skins, Áudio & Qualidade</h2>
-      <div class="preview-studio-box">
-        <canvas id="piecePreviewCanvas" width="240" height="170"></canvas>
-        <div class="preview-controls">
-          <div class="seg-group compact" id="segPreviewType">
-            <button type="button" class="seg active" data-val="k">♔</button>
-            <button type="button" class="seg" data-val="q">♕</button>
-            <button type="button" class="seg" data-val="r">♖</button>
-            <button type="button" class="seg" data-val="b">♗</button>
-            <button type="button" class="seg" data-val="n">♘</button>
-            <button type="button" class="seg" data-val="p">♙</button>
+    <div class="modal modal-wide panel-glass">
+      <div class="studio-head">
+        <div>
+          <div class="modal-eyebrow">ESTÚDIO 3D & RÁDIO ROYALE</div>
+          <h2 class="modal-title">Personalização & Desempenho</h2>
+        </div>
+        <button type="button" class="hint-dismiss" id="btnCloseSettingsTop" aria-label="Fechar configurações">✕</button>
+      </div>
+
+      <div class="studio-grid">
+        <!-- COLUNA ESQUERDA: VITRINE 3D AO VIVO -->
+        <div class="studio-left">
+          <div class="studio-preview-head">
+            <span class="studio-preview-title">VITRINE 3D AO VIVO</span>
+            <span class="studio-preview-badge" id="previewHeroBadge">♔ Staunton</span>
           </div>
-          <div class="seg-group compact" id="segPreviewColor">
-            <button type="button" class="seg active" data-val="w">Brancas</button>
-            <button type="button" class="seg" data-val="b">Pretas</button>
+          <div class="preview-studio-box">
+            <canvas id="piecePreviewCanvas" width="280" height="210"></canvas>
+            <div class="preview-hero-sub" id="previewHeroSub">Rei · Brancas · Rotação 360°</div>
+          </div>
+          <div class="preview-controls">
+            <div class="seg-group compact" id="segPreviewType">
+              <button type="button" class="seg active" data-val="k" title="Rei">♔</button>
+              <button type="button" class="seg" data-val="q" title="Dama">♕</button>
+              <button type="button" class="seg" data-val="r" title="Torre">♖</button>
+              <button type="button" class="seg" data-val="b" title="Bispo">♗</button>
+              <button type="button" class="seg" data-val="n" title="Cavalo">♘</button>
+              <button type="button" class="seg" data-val="p" title="Peão">♙</button>
+            </div>
+            <div class="seg-group compact" id="segPreviewColor">
+              <button type="button" class="seg active" data-val="w">Brancas</button>
+              <button type="button" class="seg" data-val="b">Pretas</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- COLUNA DIREITA: 3 ABAS CATEGORIZADAS -->
+        <div class="studio-right">
+          <div class="studio-tabs" id="settingsTabs">
+            <button type="button" class="studio-tab active" data-stab="visual">🎨 Peças & Tabuleiro</button>
+            <button type="button" class="studio-tab" data-stab="audio">🎵 Rádio & Voz</button>
+            <button type="button" class="studio-tab" data-stab="graphics">⚡ Gráfico & HUD</button>
+          </div>
+
+          <!-- ABA 1: PEÇAS & TABULEIRO -->
+          <div class="studio-pane" id="stab-visual">
+            <div class="field-row">
+              <label>Coleção & Modelo 3D das Peças</label>
+              <div class="seg-group compact skin-grid" id="segPieceStyle">
+                <button type="button" class="seg active" data-val="staunton">♔ Staunton</button>
+                <button type="button" class="seg" data-val="crystal">💎 Cristal</button>
+                <button type="button" class="seg" data-val="cyber">🌆 Cyber Neon</button>
+                <button type="button" class="seg" data-val="medieval">🏰 Medieval</button>
+                <button type="button" class="seg" data-val="marvel_heroes">🛡️ Marvel</button>
+                <button type="button" class="seg" data-val="dc_heroes">🦇 DC</button>
+                <button type="button" class="seg span-2" data-val="marvel_vs_dc">⚡ Marvel (Brancas) × DC (Pretas)</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <label>Tema do Tabuleiro (7 Ambientes)</label>
+              <div class="swatch-row" id="boardSwatches"></div>
+            </div>
+            <div class="field-row" style="margin-bottom:0">
+              <label>Material & Cores das Peças</label>
+              <div class="swatch-row" id="pieceSwatches"></div>
+            </div>
+          </div>
+
+          <!-- ABA 2: RÁDIO & VOZ -->
+          <div class="studio-pane" id="stab-audio" style="display:none">
+            <div class="field-row">
+              <label>Música Ambiente</label>
+              <div class="seg-group compact" id="segMusic">
+                <button type="button" class="seg active" data-val="1">🔊 Ligada</button>
+                <button type="button" class="seg" data-val="0">🔇 Desligada</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <label>Estação Musical (Rádio Royale c/ Eco Estéreo)</label>
+              <div class="seg-group compact station-grid" id="segMusicStyle">
+                <button type="button" class="seg active" data-val="imperial">🏛️ Imperial</button>
+                <button type="button" class="seg" data-val="vice">🌴 Vice 80s</button>
+                <button type="button" class="seg" data-val="lofi">☕ Lo-Fi Club</button>
+                <button type="button" class="seg" data-val="tension">⚔️ Tensão GM</button>
+                <button type="button" class="seg" data-val="gotham">🦇 Gotham Noir</button>
+                <button type="button" class="seg" data-val="heroes">⚡ Heróis</button>
+              </div>
+            </div>
+            <div class="field-row" style="margin-bottom:0">
+              <label>Narrador de Voz em Português (Anuncia Lances, Xeques e Aberturas)</label>
+              <div class="seg-group compact" id="segNarrator">
+                <button type="button" class="seg active" data-val="0">Desligado</button>
+                <button type="button" class="seg" data-val="1">🎙️ Narrador Ativo</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ABA 3: GRÁFICO & HUD -->
+          <div class="studio-pane" id="stab-graphics" style="display:none">
+            <div class="field-row">
+              <label>Iluminação de Estúdio PBR (RoomEnvironment)</label>
+              <div class="seg-group compact" id="segLighting">
+                <button type="button" class="seg" data-val="dark">🌑 Escuro</button>
+                <button type="button" class="seg" data-val="dim">🕯️ Penumbra</button>
+                <button type="button" class="seg active" data-val="lit">💡 Estúdio</button>
+              </div>
+            </div>
+            <div class="field-row">
+              <label>Qualidade Gráfica 3D</label>
+              <div class="seg-group compact" id="segQuality">
+                <button type="button" class="seg active" data-val="auto">Auto</button>
+                <button type="button" class="seg" data-val="high">Alta</button>
+                <button type="button" class="seg" data-val="medium">Média</button>
+                <button type="button" class="seg" data-val="low">Leve</button>
+              </div>
+            </div>
+            <div class="two-col" style="margin-top:0">
+              <div class="field-row" style="margin-bottom:0">
+                <label>Barra de Avaliação</label>
+                <div class="seg-group compact" id="segEval">
+                  <button type="button" class="seg active" data-val="0">Oculta</button>
+                  <button type="button" class="seg" data-val="1">Visível</button>
+                </div>
+              </div>
+              <div class="field-row" style="margin-bottom:0">
+                <label>Vibração Tátil</label>
+                <div class="seg-group compact" id="segHaptics">
+                  <button type="button" class="seg active" data-val="1">Ligada</button>
+                  <button type="button" class="seg" data-val="0">Desligada</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="studio-foot">
+            <button type="button" class="btn prim full" id="btnCloseSettings">CONCLUIR</button>
           </div>
         </div>
       </div>
-      <div class="field-row">
-        <label>Tabuleiro</label>
-        <div class="swatch-row" id="boardSwatches"></div>
-      </div>
-      <div class="field-row">
-        <label>Skin 3D das Peças (Modelo & Coleção)</label>
-        <div class="seg-group compact" id="segPieceStyle" style="flex-wrap:wrap">
-          <button type="button" class="seg active" data-val="staunton">♔ Staunton</button>
-          <button type="button" class="seg" data-val="crystal">💎 Cristal</button>
-          <button type="button" class="seg" data-val="cyber">🌆 Cyber</button>
-          <button type="button" class="seg" data-val="medieval">🏰 Medieval</button>
-          <button type="button" class="seg" data-val="marvel_heroes">🛡️ Marvel</button>
-          <button type="button" class="seg" data-val="dc_heroes">🦇 DC</button>
-          <button type="button" class="seg" data-val="marvel_vs_dc">⚡ Marvel×DC</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Cores das Peças</label>
-        <div class="swatch-row" id="pieceSwatches"></div>
-      </div>
-      <div class="field-row">
-        <label>Música Ambiente</label>
-        <div class="seg-group compact" id="segMusic">
-          <button type="button" class="seg active" data-val="1">Ligada</button>
-          <button type="button" class="seg" data-val="0">Desligada</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Estação Musical (Rádio Royale)</label>
-        <div class="seg-group compact" id="segMusicStyle" style="flex-wrap:wrap">
-          <button type="button" class="seg active" data-val="imperial">🏛️ Imperial</button>
-          <button type="button" class="seg" data-val="vice">🌴 Vice 80s</button>
-          <button type="button" class="seg" data-val="lofi">☕ Lo-Fi</button>
-          <button type="button" class="seg" data-val="tension">⚔️ Tensão</button>
-          <button type="button" class="seg" data-val="gotham">🦇 Gotham</button>
-          <button type="button" class="seg" data-val="heroes">⚡ Heróis</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Narrador de Voz (Português)</label>
-        <div class="seg-group compact" id="segNarrator">
-          <button type="button" class="seg active" data-val="0">Desligado</button>
-          <button type="button" class="seg" data-val="1">🎙️ Ativo</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Iluminação de Estúdio</label>
-        <div class="seg-group compact" id="segLighting">
-          <button type="button" class="seg" data-val="dark">🌑 Escuro</button>
-          <button type="button" class="seg" data-val="dim">🕯️ Penumbra</button>
-          <button type="button" class="seg active" data-val="lit">💡 Estúdio</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Qualidade Gráfica</label>
-        <div class="seg-group compact" id="segQuality">
-          <button type="button" class="seg active" data-val="auto">Auto</button>
-          <button type="button" class="seg" data-val="high">Alta</button>
-          <button type="button" class="seg" data-val="medium">Média</button>
-          <button type="button" class="seg" data-val="low">Leve</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Vibração Tátil</label>
-        <div class="seg-group compact" id="segHaptics">
-          <button type="button" class="seg active" data-val="1">Ligada</button>
-          <button type="button" class="seg" data-val="0">Desligada</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Barra de Avaliação (Local)</label>
-        <div class="seg-group compact" id="segEval">
-          <button type="button" class="seg active" data-val="0">Oculta</button>
-          <button type="button" class="seg" data-val="1">Visível</button>
-        </div>
-      </div>
-      <button type="button" class="btn prim full" id="btnCloseSettings">CONCLUIR</button>
     </div>
   </div>
 
@@ -449,47 +503,72 @@
     </div>
   </div>
 
-  <!-- AMIGOS & JOGADORES ONLINE -->
-  <div class="overlay hide" id="socialOverlay">
-    <div class="modal panel-glass">
-      <div class="modal-eyebrow">CLUBE SOCIAL</div>
-      <h2 class="modal-title">Jogadores Online & Amigos</h2>
-      <div class="field-row">
-        <label>Jogadores Ativos Agora</label>
-        <div id="onlinePlayersList" class="lb-list"></div>
-      </div>
-      <div class="field-row">
-        <label>Meus Amigos</label>
-        <div id="friendsList" class="lb-list"></div>
-      </div>
-      <button type="button" class="btn full" id="btnCloseSocial">FECHAR</button>
-    </div>
-  </div>
-
-  <!-- PERFIL, LIGAS & CONQUISTAS -->
+  <!-- CENTRAL DO JOGADOR UNIFICADA (PERFIL & LIGAS + AMIGOS & ONLINE + RANKING TOP 10) -->
   <div class="overlay hide" id="profileOverlay">
-    <div class="modal panel-glass">
-      <div class="modal-eyebrow">CARTÃO DE JOGADOR</div>
-      <h2 class="modal-title" id="profTitle">JOGADOR</h2>
-      <div class="prof-league-banner" id="profLeagueBanner">🥈 Liga Prata · 1200 Elo</div>
-      <div class="prof-stats-grid" id="profStatsGrid"></div>
-      <div class="field-row">
-        <label>Conquistas Desbloqueadas</label>
-        <div id="achGrid" class="ach-grid"></div>
+    <div class="modal modal-wide panel-glass">
+      <div class="userhub-header">
+        <div class="userhub-id">
+          <div class="userhub-badge" id="profBadgeIcon">🥈</div>
+          <div>
+            <div class="modal-eyebrow">CENTRAL DO JOGADOR & CLUBE ROYALE</div>
+            <h2 class="modal-title" id="profTitle">JOGADOR</h2>
+            <div class="prof-league-inline" id="profLeagueBanner">🥈 Liga Prata · 1200 Elo</div>
+          </div>
+        </div>
+        <div class="studio-tabs userhub-tabs" id="userHubTabs">
+          <button type="button" class="studio-tab active" data-utab="overview">🏅 Perfil & Conquistas</button>
+          <button type="button" class="studio-tab" data-utab="social">👥 Amigos & Online</button>
+          <button type="button" class="studio-tab" data-utab="ranking">🏆 Ranking Top 10</button>
+        </div>
       </div>
-      <button type="button" class="btn full" id="btnCloseProfile">FECHAR</button>
+
+      <!-- ABA 1: PERFIL, PROGRESSO DA LIGA & CONQUISTAS -->
+      <div class="userhub-pane" id="utab-overview">
+        <div class="league-progress-card">
+          <div class="league-progress-row">
+            <span id="profLeagueCurr">🥈 Liga Prata</span>
+            <span id="profLeagueNext">Próxima: 🥇 Ouro (1300 Elo)</span>
+          </div>
+          <div class="league-progress-track">
+            <div class="league-progress-fill" id="profLeagueFill" style="width:50%"></div>
+          </div>
+        </div>
+        <div class="prof-stats-grid" id="profStatsGrid"></div>
+        <div class="field-row" style="margin-bottom:0">
+          <label>Conquistas Desbloqueadas (7 Medalhas)</label>
+          <div id="achGrid" class="ach-grid"></div>
+        </div>
+      </div>
+
+      <!-- ABA 2: AMIGOS & JOGADORES ONLINE -->
+      <div class="userhub-pane" id="utab-social" style="display:none">
+        <div class="userhub-two-col">
+          <div class="field-row" style="margin-bottom:0">
+            <label>🟢 Jogadores Online Agora (Desafio 1-Clique)</label>
+            <div id="onlinePlayersList" class="lb-list"></div>
+          </div>
+          <div class="field-row" style="margin-bottom:0">
+            <label>⭐ Meus Amigos</label>
+            <div id="friendsList" class="lb-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ABA 3: RANKING TOP 10 -->
+      <div class="userhub-pane" id="utab-ranking" style="display:none">
+        <div class="field-row" style="margin-bottom:0">
+          <label>🏆 Classificação Geral Elo — Top 10</label>
+          <div id="lbList" class="lb-list"></div>
+        </div>
+      </div>
+
+      <button type="button" class="btn full" id="btnCloseProfile">FECHAR CENTRAL</button>
     </div>
   </div>
 
-  <!-- RANKING -->
-  <div class="overlay hide" id="lbOverlay">
-    <div class="modal panel-glass">
-      <div class="modal-eyebrow">CLASSIFICAÇÃO ELO</div>
-      <h2 class="modal-title">Top 10 Jogadores</h2>
-      <div id="lbList" class="lb-list"></div>
-      <button type="button" class="btn full" id="btnCloseLb">FECHAR</button>
-    </div>
-  </div>
+  <!-- Containers de compatibilidade para socialOverlay e lbOverlay -->
+  <div class="overlay hide" id="socialOverlay" style="display:none"><button type="button" id="btnCloseSocial"></button></div>
+  <div class="overlay hide" id="lbOverlay" style="display:none"><button type="button" id="btnCloseLb"></button></div>
 
   <!-- FIM DE JOGO -->
   <div class="overlay hide" id="overOverlay">
