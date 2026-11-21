@@ -440,4 +440,32 @@ test('Neblina de Guerra 3D (Fog of War) e Xadrez 960 (Fischer Random) geram esta
   }
 });
 
+test('Torre Royale (Roguelike PvE): 8 andares, escolha de Bênçãos e aplicação de modificadores funcionam', async () => {
+  const { TowerRunManager, TOWER_FLOORS, TOWER_BOONS } = await import('../src/core/roguelike.js');
+  const { RoyaleMatchManager } = await import('../src/core/royale-mode.js');
+  assert.equal(TOWER_FLOORS.length, 8);
+  assert.equal(TOWER_BOONS.length, 6);
+
+  const tr = new TowerRunManager();
+  tr.startNewRun();
+  assert.equal(tr.floor, 1);
+
+  const choices = tr.getRewardChoices(3);
+  assert.equal(choices.length, 3);
+  tr.addBoon('energy_surge');
+  tr.addBoon('sniper_strike');
+  tr.addBoon('royal_aegis');
+
+  const c = new Chess();
+  const rm = new RoyaleMatchManager();
+  tr.prepareFloorMatch(c, rm);
+  assert.equal(rm.energy.w, 2);
+  assert.equal(c.get('a8'), undefined); // sniper_strike removeu torre de a8
+  assert.ok(rm.isSquareShielded('d1', 0)); // royal_aegis escudou Dama branca
+
+  const adv = tr.advanceAfterWin();
+  assert.equal(adv.clearedRun, false);
+  assert.equal(tr.floor, 2);
+});
+
 

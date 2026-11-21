@@ -35,6 +35,7 @@ import {
   RoyaleMatchManager, SPECIAL_RULESETS, getRingSquares,
   computeFogVisibleSquares, generateChess960Fen
 } from './core/royale-mode.js';
+import { TowerRunManager, TOWER_FLOORS, TOWER_BOONS } from './core/roguelike.js';
 
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
@@ -46,6 +47,8 @@ const prefs = loadPrefs();
 /* ============ ESTADO ============ */
 const chess = new Chess();
 const royale = new RoyaleMatchManager();
+const towerRun = new TowerRunManager();
+let isTowerMatch = false;
 let activeRuleset = 'classic';
 let mode = 'pve';
 let aiDepth = prefs.aiDepth ?? 2;
@@ -1092,11 +1095,30 @@ async function endGameFromBoard(customWinner = null, customReason = '') {
     unlockMatchesAchievements(newAchs);
   }
 
+  /* Progressão da Torre Royale (Roguelike PvE) */
+  if (isTowerMatch) {
+    if (winner === 'w') {
+      const adv = towerRun.advanceAfterWin();
+      if (adv.clearedRun) {
+        showEsportsBanner('👑 TORRE ROYALE CONQUISTADA!', 'Você derrotou todos os 8 Guardiões e o Imperador Stockfish!', 'gold', 4200);
+        narrator.speak('Parabéns! Você conquistou o topo da Torre Royale!', true);
+        openTowerModal(false);
+        return;
+      }
+      showEsportsBanner(`🏰 ANDAR ${towerRun.floor - 1} VENCIDO!`, 'Escolha 1 Bênção Permanente para o próximo andar!', 'cyan', 3400);
+      openTowerModal(true);
+      return;
+    }
+    if ($('#overEyebrow')) $('#overEyebrow').textContent = `TORRE ROYALE · ANDAR ${towerRun.floor}/8`;
+  } else {
+    if ($('#overEyebrow')) $('#overEyebrow').textContent = 'FIM DE PARTIDA';
+  }
+
   $('#overTitle').textContent = winner === 'draw' ? 'Empate' : (winner === 'w' ? 'Brancas Vencem' : 'Pretas Vencem');
   $('#overSub').textContent = reason;
   $('#overDelta').style.display = 'none';
   $('#rematchStatus').style.display = 'none';
-  $('#btnRematch').textContent = (mode === 'online' && !online.game?.spectate) ? '🔄 PEDIR REVANCHE' : 'JOGAR NOVAMENTE';
+  $('#btnRematch').textContent = (mode === 'online' && !online.game?.spectate) ? '🔄 PEDIR REVANCHE' : (isTowerMatch ? '⚔️ TENTAR ANDAR NOVAMENTE' : 'JOGAR NOVAMENTE');
   $('#btnRematch').style.display = online.game?.spectate ? 'none' : 'block';
   $('#btnAnalyze').style.display = chess.history().length > 0 ? 'block' : 'none';
   $('#overOverlay').classList.remove('hide');
@@ -1369,22 +1391,37 @@ function startMatch(newMode, opts = {}) {
   clearTimeout(botArenaTimer);
   botArenaPaused = false;
   mode = newMode;
+  isTowerMatch = Boolean(opts.isTower);
   narrator.resetMatch();
   lastEvalWhiteCp = 0;
   firstBloodClaimed = false;
   lastCapturePlyByColor = { w: -99, b: -99 };
 
-  const matchRuleset = (newMode === 'online' || newMode === 'puzzle')
-    ? 'classic'
-    : (opts.ruleset || activeRuleset || 'classic');
-  royale.reset(matchRuleset);
-
-  if (opts.customFen) {
-    chess.load(opts.customFen);
-  } else if (matchRuleset === 'chess960') {
-    chess.load(generateChess960Fen());
+  if (isTowerMatch) {
+    playerSide = 'w';
+    myColor = 'w';
+    const floorCfg = towerRun.prepareFloorMatch(chess, royale);
+    aiDepth = floorCfg.depth || 2;
+    opts.overrideBot = {
+      name: floorCfg.guardian,
+      rating: floorCfg.rating,
+      avatar: floorCfg.avatar,
+      depth: floorCfg.depth,
+      style: floorCfg.style || 'balanced'
+    };
   } else {
-    chess.reset();
+    const matchRuleset = (newMode === 'online' || newMode === 'puzzle')
+      ? 'classic'
+      : (opts.ruleset || activeRuleset || 'classic');
+    royale.reset(matchRuleset);
+
+    if (opts.customFen) {
+      chess.load(opts.customFen);
+    } else if (matchRuleset === 'chess960') {
+      chess.load(generateChess960Fen());
+    } else {
+      chess.reset();
+    }
   }
   reviewPly = null;
   plyAnalyses = [];
@@ -1720,6 +1757,92 @@ $('#btnStartPuzzles').onclick = () => {
   const firstUnsolved = TACTICAL_PUZZLES.findIndex(p => !solvedPuzzles.has(p.id));
   startPuzzle(firstUnsolved >= 0 ? firstUnsolved : 0);
 };
+
+/* ============ TORRE ROYALE (ROGUELIKE PvE DE 8 ANDARES) ============ */
+function openTowerModal(showReward = false) {
+  const cfg = towerRun.getCurrentFloorConfig();
+  if ($('#towerTitle')) $('#towerTitle').textContent = `🏰 Torre Royale — Andar ${towerRun.floor}/8`;
+  if ($('#towerRecordBadge')) {
+    $('#towerRecordBadge').textContent = `🏆 Recorde: Andar ${towerRun.bestFloor}/8 · 👑 ${towerRun.clears} Coroa(s)`;
+  }
+
+  if ($('#towerLadder')) {
+    $('#towerLadder').innerHTML = TOWER_FLOORS.map(f => {
+      const cls = f.floor < towerRun.floor ? 'done' : (f.floor === towerRun.floor ? 'current' : '');
+      return `<div class="tower-step ${cls}">
+        <strong>${f.floor < towerRun.floor ? '✓' : f.avatar}</strong>
+        <span>Andar ${f.floor}</span>
+        <small>${f.rating}</small>
+      </div>`;
+    }).join('');
+  }
+
+  if ($('#towerFloorCard')) {
+    const ruleTag = cfg.ruleset === 'royale' ? '🔥 Battle Royale 3D' : (cfg.use960 ? '🎲 Xadrez 960 + Heróis' : '⚡ Poderes de Heróis');
+    $('#towerFloorCard').innerHTML = `
+      <div>
+        <div class="modal-eyebrow">PRÓXIMO DESAFIO · ${ruleTag.toUpperCase()}</div>
+        <strong style="font-size:16px;color:#F4C96B">${cfg.avatar} Andar ${cfg.floor}: ${cfg.name} — ${cfg.guardian} (${cfg.rating} Elo)</strong>
+        <div style="font-size:12px;color:var(--text-dim);margin-top:3px">${cfg.desc}</div>
+      </div>
+    `;
+  }
+
+  if ($('#towerBoonCount')) $('#towerBoonCount').textContent = String(towerRun.boons.length);
+  if ($('#towerActiveBoons')) {
+    $('#towerActiveBoons').innerHTML = towerRun.boons.length
+      ? towerRun.boons.map(id => {
+          const b = TOWER_BOONS.find(x => x.id === id);
+          return b ? `<span class="tower-boon-chip" title="${b.desc}">${b.icon} ${b.name}</span>` : '';
+        }).join('')
+      : '<span class="status-msg" style="padding:4px 0">Vença andares para escolher Relíquias & Bênçãos permanentes!</span>';
+  }
+
+  const rewardBox = $('#towerRewardBox');
+  const rewardGrid = $('#towerRewardGrid');
+  if (rewardBox && rewardGrid) {
+    rewardBox.classList.toggle('hide', !showReward);
+    if (showReward) {
+      const choices = towerRun.getRewardChoices(3);
+      rewardGrid.innerHTML = choices.map(b => `
+        <button type="button" class="tower-reward-btn" data-boon="${b.id}">
+          <strong>${b.icon} ${b.name}</strong>
+          <small>${b.desc}</small>
+        </button>
+      `).join('');
+      rewardGrid.querySelectorAll('[data-boon]').forEach(btn => {
+        btn.onclick = () => {
+          audio.promote();
+          towerRun.addBoon(btn.dataset.boon);
+          const picked = TOWER_BOONS.find(x => x.id === btn.dataset.boon);
+          if (picked) toast(`✨ Bênção adquirida: ${picked.icon} ${picked.name}!`);
+          openTowerModal(false);
+        };
+      });
+    }
+  }
+
+  $('#overOverlay').classList.add('hide');
+  $('#towerOverlay').classList.remove('hide');
+}
+
+if ($('#btnStartTower')) $('#btnStartTower').onclick = () => { audio.click(); openTowerModal(false); };
+if ($('#btnCloseTower')) $('#btnCloseTower').onclick = () => $('#towerOverlay').classList.add('hide');
+if ($('#btnTowerReset')) {
+  $('#btnTowerReset').onclick = () => {
+    towerRun.startNewRun();
+    toast('🔄 Escalada da Torre Royale reiniciada no Andar 1!');
+    openTowerModal(false);
+  };
+}
+if ($('#btnTowerFight')) {
+  $('#btnTowerFight').onclick = () => {
+    $('#towerOverlay').classList.add('hide');
+    startMatch('pve', { isTower: true });
+    const cfg = towerRun.getCurrentFloorConfig();
+    showEsportsBanner(`🏰 ANDAR ${cfg.floor}/8 · ${cfg.name.toUpperCase()}`, `Vs ${cfg.guardian} (${cfg.rating} Elo)`, 'gold', 3000);
+  };
+}
 
 /* Controles da Arena Bot vs Bot + Botão Assumir Controle */
 $('#btnBotPause').onclick = () => {

@@ -605,6 +605,40 @@
   <div class="overlay hide" id="socialOverlay" style="display:none"><button type="button" id="btnCloseSocial"></button></div>
   <div class="overlay hide" id="lbOverlay" style="display:none"><button type="button" id="btnCloseLb"></button></div>
 
+  <!-- MODAL: TORRE ROYALE (ROGUELIKE PvE DE 8 ANDARES + ESCOLHA DE RELÍQUIAS) -->
+  <div class="overlay hide" id="towerOverlay">
+    <div class="modal modal-wide panel-glass tower-modal">
+      <div class="studio-header">
+        <div>
+          <div class="modal-eyebrow">CAMPANHA ROGUELIKE PvE · 8 ANDARES</div>
+          <h2 class="modal-title" id="towerTitle">🏰 Torre Royale — Andar 1/8</h2>
+        </div>
+        <span class="royale-zone-badge" id="towerRecordBadge">🏆 Recorde: Andar 1 · 0 Coroas</span>
+      </div>
+
+      <div class="tower-ladder" id="towerLadder"></div>
+
+      <div class="tower-active-card" id="towerFloorCard"></div>
+
+      <div class="field-row" style="margin-bottom:0">
+        <label>Relíquias & Bênçãos Ativas na Escalada (<span id="towerBoonCount">0</span>)</label>
+        <div class="tower-boons-bar" id="towerActiveBoons"></div>
+      </div>
+
+      <!-- SEÇÃO DE RECOMPENSA (ESCOLHA 1 DE 3 APÓS VITÓRIA) -->
+      <div class="tower-reward-box hide" id="towerRewardBox">
+        <div class="modal-eyebrow" style="color:#38BDF8">VITÓRIA NO ANDAR! ESCOLHA 1 BÊNÇÃO PERMANENTE:</div>
+        <div class="tower-reward-grid" id="towerRewardGrid"></div>
+      </div>
+
+      <div class="two-col" style="margin-top:6px">
+        <button type="button" class="btn prim full" id="btnTowerFight">⚔️ ENFRENTAR GUARDIÃO DO ANDAR</button>
+        <button type="button" class="btn full" id="btnTowerReset">🔄 Reiniciar Escalada (Andar 1)</button>
+      </div>
+      <button type="button" class="btn full" id="btnCloseTower">FECHAR TORRE</button>
+    </div>
+  </div>
+
   <!-- FIM DE JOGO -->
   <div class="overlay hide" id="overOverlay">
     <div class="modal panel-glass">
