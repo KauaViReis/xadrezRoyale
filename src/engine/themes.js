@@ -63,6 +63,32 @@ export const BOARD_THEMES = [
     fillet: 0xFF5FA2,
     coord: 0x27D8E8,
     weather: 'vice'
+  },
+  {
+    id: 'stark_tower',
+    name: 'TORRE VINGADORES',
+    light: 0x8A93A2,
+    dark: 0x1B202A,
+    frame: 0x0D1117,
+    table: 0x090C11,
+    bg: 0x07090D,
+    tex: 'marble',
+    fillet: 0xD4AF37,
+    coord: 0x67E8F9,
+    weather: 'shimmer'
+  },
+  {
+    id: 'gotham_noir',
+    name: 'GOTHAM NOIR',
+    light: 0x73757C,
+    dark: 0x14161A,
+    frame: 0x0A0B0E,
+    table: 0x060709,
+    bg: 0x050608,
+    tex: 'slate',
+    fillet: 0xB89158,
+    coord: 0xCBD5E1,
+    weather: 'dust'
   }
 ];
 

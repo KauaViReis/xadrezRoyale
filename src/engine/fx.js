@@ -555,6 +555,28 @@ export class FXManager {
     }
   }
 
+  /* Anel de onda de choque 3D (Shockwave) em capturas e xeque-mate */
+  spawnShockwave(r, c, colorHex = 0xC99A3E) {
+    if (this.qualityTier === 'low' || !isValidRC(r, c)) return;
+    if (!this.shockwaves) this.shockwaves = [];
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const m = new THREE.Mesh(this.ringGeo, mat);
+    m.rotation.x = -Math.PI / 2;
+    const origin = worldPos(r, c);
+    m.position.set(origin.x, 0.032, origin.z);
+    m.scale.setScalar(0.35);
+    m.renderOrder = 7;
+    m.userData = { life: 0, maxLife: 0.48, sharedGeo: true };
+    this.fxGroup.add(m);
+    this.shockwaves.push(m);
+  }
+
   update(time, dt) {
     for (const m of this.indicators) {
       m.material.opacity = (m.userData.isCapture ? 0.58 : 0.52) + 0.18 * Math.sin(time * 4.5 + m.userData.ph);
@@ -577,6 +599,24 @@ export class FXManager {
         this.hintState.ghostMesh.position.y = 0.04 + 0.045 * hover;
         this.hintState.ghostMat.opacity = 0.38 + 0.16 * hover;
       }
+    }
+
+    if (this.shockwaves && this.shockwaves.length > 0) {
+      let sw = 0;
+      for (let i = 0; i < this.shockwaves.length; i++) {
+        const ring = this.shockwaves[i];
+        ring.userData.life += dt;
+        const prog = ring.userData.life / ring.userData.maxLife;
+        if (prog >= 1) {
+          this.fxGroup.remove(ring);
+          if (ring.material) ring.material.dispose();
+          continue;
+        }
+        ring.scale.setScalar(0.35 + prog * 2.25);
+        ring.material.opacity = (1 - prog) * 0.82;
+        this.shockwaves[sw++] = ring;
+      }
+      this.shockwaves.length = sw;
     }
 
     /* Clima atmosférico por tema (desativado no tier low) */

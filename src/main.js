@@ -570,6 +570,7 @@ async function executeMove(moveInput, isRemote = false) {
       disposePieceObject(victim.mesh);
       addCapturedToken(victim.type, victim.color);
       fx.spawnParticles(capR, capC, PIECE_THEMES[pieceThemeIdx][victim.color]);
+      fx.spawnShockwave(capR, capC, 0xEF4444);
     }
   }
 
