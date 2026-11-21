@@ -804,3 +804,50 @@ button:focus-visible, input:focus-visible {
   .userhub-tabs { min-width: 100%; }
   .userhub-two-col { grid-template-columns: 1fr; }
 }
+
+/* ============ BANNER CINEMÁTICO E-SPORTS & MODO ROYALE ============ */
+.esports-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 22px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(17, 22, 34, 0.94), rgba(32, 22, 14, 0.94));
+  border: 1px solid rgba(226, 185, 91, 0.65);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 24px rgba(201, 154, 62, 0.35);
+  pointer-events: none;
+  animation: esportsPop 0.32s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.esports-banner.tone-danger {
+  border-color: rgba(239, 68, 68, 0.78);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 26px rgba(239, 68, 68, 0.45);
+}
+.esports-banner.tone-cyan {
+  border-color: rgba(56, 189, 248, 0.78);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.65), 0 0 26px rgba(56, 189, 248, 0.45);
+}
+.esports-title {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  color: #F4C96B;
+  text-transform: uppercase;
+}
+.esports-banner.tone-danger .esports-title { color: #F87171; }
+.esports-banner.tone-cyan .esports-title { color: #38BDF8; }
+.esports-sub {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+@keyframes esportsPop {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.88); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+}
+

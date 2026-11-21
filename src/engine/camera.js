@@ -210,6 +210,20 @@ export class CameraController {
     });
   }
 
+  /* Screen-shake cinematográfico 3D em capturas pesadas, xeques e colapsos Royale */
+  async shake(intensity = 0.14, durationMs = 260) {
+    const baseTarget = this.target.clone();
+    await tween(durationMs, k => {
+      const damp = 1 - k;
+      const ox = (Math.random() - 0.5) * 2 * intensity * damp;
+      const oz = (Math.random() - 0.5) * 2 * intensity * damp;
+      this.target.set(baseTarget.x + ox, baseTarget.y, baseTarget.z + oz);
+      this.sync();
+    });
+    this.target.copy(baseTarget);
+    this.sync();
+  }
+
   _bind() {
     const el = this.canvas;
     if (!el || typeof el.addEventListener !== 'function') return;

@@ -331,6 +331,13 @@ test('MUSIC_STATIONS e VoiceNarrator funcionam com segurança no Node.js', async
   const vn = new VoiceNarrator();
   vn.setEnabled(true);
   vn.announceMove({ piece: 'q', color: 'w', to: 'f7', captured: 'p', flags: 'c' }, { isCheckmate: true });
+  const blunder = vn.reactToEvalSwing({ prevWhiteCp: 120, newWhiteCp: -250, moverColor: 'w', ply: 6 });
+  assert.equal(blunder.tag, 'blunder');
+  const brilliant = vn.reactToEvalSwing({ prevWhiteCp: 20, newWhiteCp: 260, moverColor: 'w', ply: 10 });
+  assert.equal(brilliant.tag, 'brilliant');
+  const comeback = vn.reactToEvalSwing({ prevWhiteCp: 240, newWhiteCp: -190, moverColor: 'b', ply: 14 });
+  assert.equal(comeback.tag, 'comeback');
+  vn.announceEsportsEvent('first_blood');
   vn.resetMatch();
   assert.equal(vn.lastOpeningSpoken, null);
 });

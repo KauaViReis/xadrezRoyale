@@ -577,6 +577,27 @@ export class FXManager {
     this.shockwaves.push(m);
   }
 
+  /* Feixe / Raio Orbital 3D (Cinematics E-Sports & Poderes de Heróis) */
+  spawnLightningBolt(r, c, colorHex = 0xE2B95B) {
+    if (this.qualityTier === 'low' || !isValidRC(r, c)) return;
+    if (!this.lightningBolts) this.lightningBolts = [];
+    if (!this.boltGeo) this.boltGeo = new THREE.CylinderGeometry(0.06, 0.22, 4.2, 8, 1, true);
+    const origin = worldPos(r, c);
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.92,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const beam = new THREE.Mesh(this.boltGeo, mat);
+    beam.position.set(origin.x, 2.12, origin.z);
+    beam.renderOrder = 9;
+    beam.userData = { life: 0, maxLife: 0.42, sharedGeo: true };
+    this.fxGroup.add(beam);
+    this.lightningBolts.push(beam);
+  }
+
   update(time, dt) {
     for (const m of this.indicators) {
       m.material.opacity = (m.userData.isCapture ? 0.58 : 0.52) + 0.18 * Math.sin(time * 4.5 + m.userData.ph);
@@ -617,6 +638,25 @@ export class FXManager {
         this.shockwaves[sw++] = ring;
       }
       this.shockwaves.length = sw;
+    }
+
+    if (this.lightningBolts && this.lightningBolts.length > 0) {
+      let lb = 0;
+      for (let i = 0; i < this.lightningBolts.length; i++) {
+        const beam = this.lightningBolts[i];
+        beam.userData.life += dt;
+        const prog = beam.userData.life / beam.userData.maxLife;
+        if (prog >= 1) {
+          this.fxGroup.remove(beam);
+          if (beam.material) beam.material.dispose();
+          continue;
+        }
+        const sx = 1.35 - prog * 1.1;
+        beam.scale.set(sx, 1, sx);
+        beam.material.opacity = (1 - prog) * 0.92;
+        this.lightningBolts[lb++] = beam;
+      }
+      this.lightningBolts.length = lb;
     }
 
     /* Clima atmosférico por tema (desativado no tier low) */

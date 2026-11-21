@@ -478,12 +478,29 @@ function goToPly(ply) {
   refreshEval(viewChess.fen(), clamped);
 }
 
+let lastEvalWhiteCp = 0;
+let firstBloodClaimed = false;
+let lastCapturePlyByColor = { w: -99, b: -99 };
+let esportsBannerTimer = null;
+
+function showEsportsBanner(title, sub = '', tone = 'gold', durationMs = 2600) {
+  const el = $('#esportsBanner');
+  if (!el) return;
+  if ($('#esportsTitle')) $('#esportsTitle').textContent = title;
+  if ($('#esportsSub')) $('#esportsSub').textContent = sub;
+  el.classList.remove('hide', 'tone-danger', 'tone-cyan');
+  if (tone === 'danger') el.classList.add('tone-danger');
+  else if (tone === 'cyan') el.classList.add('tone-cyan');
+  clearTimeout(esportsBannerTimer);
+  esportsBannerTimer = setTimeout(() => el.classList.add('hide'), durationMs);
+}
+
 async function refreshEval(fen = chess.fen(), plyForAnalysis = null) {
   const show = canShowEval();
   $('#evalWrap').style.display = show ? 'flex' : 'none';
-  if (!show) return;
 
   if (plyForAnalysis !== null && plyForAnalysis > 0 && plyAnalyses[plyForAnalysis - 1]) {
+    if (!show) return;
     const a = plyAnalyses[plyForAnalysis - 1];
     const wp = cpToWinProb(a.evalCp, a.mateIn);
     $('#evalFill').style.height = `${Math.max(5, Math.min(95, wp * 100))}%`;
@@ -493,9 +510,30 @@ async function refreshEval(fen = chess.fen(), plyForAnalysis = null) {
 
   const res = await askWorker('evaluate', { fen }, { depth: 1, quiesce: true });
   if (!res.ok) return;
-  const wp = cpToWinProb(res.cp ?? res.evalCp ?? 0, res.mateIn ?? null);
+  const newWhiteCp = res.cp ?? res.evalCp ?? 0;
+  const histV = chess.history({ verbose: true });
+  if (plyForAnalysis === null && histV.length >= 4 && gameActive) {
+    const lastMove = histV[histV.length - 1];
+    const reaction = narrator.reactToEvalSwing({
+      prevWhiteCp: lastEvalWhiteCp,
+      newWhiteCp,
+      moverColor: lastMove.color,
+      ply: histV.length
+    });
+    if (reaction.tag === 'blunder') {
+      showEsportsBanner('🦆 CAPIVARA DETECTADA (??)', reaction.text, 'danger', 2800);
+    } else if (reaction.tag === 'brilliant') {
+      showEsportsBanner('💎 LANCE DE MESTRE (!!)', reaction.text, 'cyan', 2800);
+    } else if (reaction.tag === 'comeback') {
+      showEsportsBanner('🔥 VIRADA HISTÓRICA!', reaction.text, 'gold', 3000);
+    }
+  }
+  lastEvalWhiteCp = newWhiteCp;
+
+  if (!show) return;
+  const wp = cpToWinProb(newWhiteCp, res.mateIn ?? null);
   $('#evalFill').style.height = `${Math.max(5, Math.min(95, wp * 100))}%`;
-  $('#evalNum').textContent = formatEvalDisplay(res.cp ?? res.evalCp ?? 0, res.mateIn ?? null);
+  $('#evalNum').textContent = formatEvalDisplay(newWhiteCp, res.mateIn ?? null);
 }
 
 /* ============ SELEÇÃO, PREMOVE & EXECUÇÃO ============ */
@@ -601,6 +639,28 @@ async function executeMove(moveInput, isRemote = false) {
       addCapturedToken(victim.type, victim.color);
       fx.spawnParticles(capR, capC, PIECE_THEMES[pieceThemeIdx][victim.color]);
       fx.spawnShockwave(capR, capC, 0xEF4444);
+
+      const plyCount = chess.history().length;
+      if (!firstBloodClaimed) {
+        firstBloodClaimed = true;
+        fx.spawnLightningBolt(capR, capC, 0xEF4444);
+        cam.shake(0.11, 210);
+        showEsportsBanner('🩸 FIRST BLOOD!', `Primeira captura em ${move.to.toUpperCase()}`, 'danger', 2400);
+        narrator.announceEsportsEvent('first_blood');
+      } else if (victim.type === 'q') {
+        fx.spawnLightningBolt(capR, capC, 0xF4C96B);
+        cam.shake(0.18, 280);
+        showEsportsBanner('👑 DAMA ABATIDA!', `Captura decisiva em ${move.to.toUpperCase()}`, 'gold', 2600);
+        narrator.announceEsportsEvent('queen_snipe');
+      } else if (plyCount - lastCapturePlyByColor[moverColor] <= 2) {
+        fx.spawnLightningBolt(capR, capC, 0x38BDF8);
+        cam.shake(0.12, 220);
+        showEsportsBanner('⚡ COMBO DUPLO!', 'Capturas consecutivas em sequência!', 'cyan', 2300);
+        narrator.announceEsportsEvent('double_capture');
+      } else if (victim.type === 'r') {
+        cam.shake(0.10, 180);
+      }
+      lastCapturePlyByColor[moverColor] = plyCount;
     }
   }
 
@@ -643,8 +703,15 @@ async function executeMove(moveInput, isRemote = false) {
     fx.spawnParticles(toRC.r, toRC.c, 0xC99A3E, 18);
   }
 
-  if (chess.inCheck()) audio.check();
+  if (chess.inCheck()) {
+    audio.check();
+    cam.shake(0.11, 200);
+  }
   narrator.announceMove(move, { isCheck: chess.inCheck(), isCheckmate: chess.isCheckmate() });
+  const curOpening = detectOpening(chess.history());
+  if (curOpening && chess.history().length <= 12) {
+    narrator.announceOpening(curOpening);
+  }
   fx.setLastMove(fromRC.r, fromRC.c, toRC.r, toRC.c);
   renderHistory();
   updateTurnUI();
@@ -1135,6 +1202,9 @@ function startMatch(newMode, opts = {}) {
   botArenaPaused = false;
   mode = newMode;
   narrator.resetMatch();
+  lastEvalWhiteCp = 0;
+  firstBloodClaimed = false;
+  lastCapturePlyByColor = { w: -99, b: -99 };
   if (opts.customFen) {
     chess.load(opts.customFen);
   } else {
