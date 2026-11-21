@@ -357,4 +357,33 @@ test('Coleções 3D Marvel, DC, Marvel×DC e Medieval constroem grupos 3D válid
   }
 });
 
+test('Modo Battle Royale 3D: Zona de Colapso (8x8 -> 6x6) e Cristais de Relíquia no centro funcionam corretamente', async () => {
+  const { RoyaleMatchManager, isSquareCollapsed } = await import('../src/core/royale-mode.js');
+  const rm = new RoyaleMatchManager();
+  rm.reset('royale');
+  const c = new Chess();
+
+  // Ply 4: spawna relíquia no centro
+  const ev4 = rm.advanceTurn(c, { from: 'e2', to: 'e4', color: 'w' }, 4);
+  assert.ok(ev4.relicSpawned);
+  assert.ok(['d4', 'e4', 'd5', 'e5'].includes(rm.relicSquare));
+
+  // Coleta relíquia -> +2 cargas de energia e escudo na casa
+  const targetRelic = rm.relicSquare;
+  const evClaim = rm.advanceTurn(c, { from: 'd2', to: targetRelic, color: 'w' }, 5);
+  assert.ok(evClaim.relicClaimed);
+  assert.equal(rm.energy.w, 2);
+  assert.ok(rm.isSquareShielded(targetRelic, 5));
+
+  // Ply 10: alerta de colapso do Anel 1; Ply 12: colapso físico do Anel 1 (borda A/H e 1/8)
+  const ev10 = rm.advanceTurn(c, { from: 'g1', to: 'f3', color: 'w' }, 10);
+  assert.equal(ev10.warningRing, 1);
+  const ev12 = rm.advanceTurn(c, { from: 'b8', to: 'c6', color: 'b' }, 12);
+  assert.equal(ev12.collapsedRing, 1);
+  assert.equal(rm.collapsedRings, 1);
+  assert.ok(isSquareCollapsed(0, 0, rm.collapsedRings));
+  assert.ok(!isSquareCollapsed(3, 3, rm.collapsedRings));
+  assert.ok(ev12.destroyedSquares.length > 0);
+});
+
 

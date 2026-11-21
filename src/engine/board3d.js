@@ -488,6 +488,18 @@ export function createBoard(scene, materials, tier = 'high') {
     setQuality(nextTier || currentTier, resolved);
   }
 
+  function setCollapsedRings(collapsedRings = 0) {
+    for (const sq of squares) {
+      const { r, c } = sq.userData;
+      const out1 = r === 0 || r === 7 || c === 0 || c === 7;
+      const out2 = r <= 1 || r >= 6 || c <= 1 || c >= 6;
+      const collapsed = (collapsedRings >= 1 && out1) || (collapsedRings >= 2 && out2);
+      sq.position.y = collapsed ? -1.45 : -0.04;
+      sq.scale.setScalar(collapsed ? 0.72 : 1);
+      sq.visible = !collapsed;
+    }
+  }
+
   function dispose() {
     scene.remove(boardGroup);
     scene.remove(table);
@@ -514,6 +526,7 @@ export function createBoard(scene, materials, tier = 'high') {
     coordGroup,
     setQuality,
     setTheme,
+    setCollapsedRings,
     dispose
   };
 }

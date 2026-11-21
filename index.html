@@ -157,12 +157,24 @@
     <button type="button" class="mini-btn" id="btnTakeBlack">🎮 Assumir Pretas</button>
   </div>
 
-  <!-- BARRA FLUTUANTE: MODO PUZZLES TÁTICOS -->
+  <!-- BARRA FLUTUANTE: MODO PUZZLES TÁTICOS & PUZZLE RUSH -->
   <div class="arena-bar panel-glass" id="puzzleBar" style="display:none">
     <span class="puzzle-meta" id="puzzleMeta">🧩 Puzzle 1/20</span>
+    <span class="rush-hud" id="puzzleRushHud" style="display:none">⏱ <strong id="rushTimerTxt">03:00</strong> · <span id="rushLivesTxt">❤️❤️❤️</span> · 🔥 <strong id="rushScoreTxt">0</strong></span>
     <button type="button" class="mini-btn prim" id="btnPuzzleHint">💡 Dica</button>
     <button type="button" class="mini-btn" id="btnPuzzleNext">⏭ Próximo</button>
     <button type="button" class="mini-btn" id="btnPuzzleExit">✕ Sair</button>
+  </div>
+
+  <!-- BARRA FLUTUANTE: BATTLE ROYALE 3D & PODERES DE HERÓIS -->
+  <div class="arena-bar royale-hud-bar panel-glass" id="royaleHudBar" style="display:none">
+    <span class="royale-zone-badge" id="royaleZoneBadge" style="display:none">🔥 Zona 8×8 · Colapso em 12 lances</span>
+    <div class="hero-power-group" id="heroPowerGroup" style="display:none">
+      <span class="hero-energy-badge" id="heroEnergyBadge">⚡ 0/3</span>
+      <button type="button" class="mini-btn power-btn" id="btnPowerShield" title="Escudo Arcano (1 Carga): Protege sua peça contra capturas por 1 rodada">🛡️ Escudo <small>1⚡</small></button>
+      <button type="button" class="mini-btn power-btn" id="btnPowerFreeze" title="Prisão de Gelo (2 Cargas): Congela uma peça inimiga por 1 turno">❄️ Gelo <small>2⚡</small></button>
+      <button type="button" class="mini-btn power-btn ult" id="btnPowerUlt" title="Trovão Royale (3 Cargas): Escudo aliado + Gelo inimigo + Raio Orbital 3D">⚡ Trovão <small>3⚡</small></button>
+    </div>
   </div>
 
   <!-- AÇÕES INFERIORES -->
@@ -220,11 +232,11 @@
         <div class="menu-brand-row">
           <img src="/icon.svg" alt="Xadrez Royale" class="hero-logo" width="52" height="52">
           <div>
-            <div class="modal-eyebrow">CLUBE EDITORIAL 3D · REGRAS FIDE</div>
+            <div class="modal-eyebrow">CLUBE EDITORIAL 3D · REGRAS FIDE & ROYALE</div>
             <h1 class="hero-title">Xadrez Royale</h1>
           </div>
         </div>
-        <p class="hero-sub">Skins 3D (Staunton, Cristal, Cyber & Heróis), Stockfish 19, Bot vs Bot, Puzzles e Online.</p>
+        <p class="hero-sub">Battle Royale 3D, Poderes de Heróis, Torre Roguelike, Neblina 3D, Stockfish 19 e Online.</p>
       </div>
 
       <button type="button" class="btn full" id="btnResumeGame" style="display:none">▶ RETOMAR PARTIDA</button>
@@ -238,6 +250,18 @@
 
       <!-- OPÇÕES LOCAIS / IA -->
       <div id="localOpts">
+        <div class="field-row">
+          <label>Modo de Regra & Variante 3D</label>
+          <div class="seg-group compact" id="segRuleset">
+            <button type="button" class="seg active" data-val="classic">♔ Clássico</button>
+            <button type="button" class="seg" data-val="royale">🔥 Royale 3D</button>
+            <button type="button" class="seg" data-val="heroes">⚡ Heróis</button>
+            <button type="button" class="seg" data-val="fog">🌫️ Neblina</button>
+            <button type="button" class="seg" data-val="chess960">🎲 960</button>
+          </div>
+          <div class="bot-card" id="rulesetDesc">♔ <strong>Clássico FIDE:</strong> Xadrez oficial sem modificadores.</div>
+        </div>
+
         <div class="field-row" id="diffRow">
           <label>Oponente & Nível da IA</label>
           <div class="seg-group compact" id="segDiff">
@@ -268,8 +292,13 @@
         </div>
 
         <button type="button" class="btn prim full" id="btnStartLocal">INICIAR PARTIDA</button>
-        <button type="button" class="btn full" id="btnStartPuzzles" style="margin-top:8px">🧩 PUZZLES TÁTICOS (<span id="puzzleSolvedCount">0</span>/20)</button>
+        <div class="two-col" style="margin-top:8px">
+          <button type="button" class="btn full" id="btnStartTower">🏰 TORRE ROYALE</button>
+          <button type="button" class="btn full" id="btnStartPuzzles">🧩 PUZZLES (<span id="puzzleSolvedCount">0</span>/20)</button>
+        </div>
+        <button type="button" class="btn full" id="btnStartPuzzleRush" style="margin-top:6px">⚡ PUZZLE RUSH (3 MIN · 3 VIDAS ❤️)</button>
       </div>
+
 
       <!-- OPÇÕES ARENA BOT VS BOT -->
       <div id="botArenaOpts" style="display:none">

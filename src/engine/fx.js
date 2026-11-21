@@ -528,6 +528,127 @@ export class FXManager {
     this.clearCheckSquare();
     this.clearManualAnnotations();
     this.clearHint();
+    this.clearRoyaleOverlays();
+  }
+
+  clearRoyaleOverlays() {
+    if (!this.royaleGroup) return;
+    while (this.royaleGroup.children.length > 0) {
+      const ch = this.royaleGroup.children[0];
+      this.royaleGroup.remove(ch);
+      if (ch.material) ch.material.dispose();
+    }
+    this.relicCrystalMesh = null;
+    this.royaleWarningMeshes = [];
+  }
+
+  /**
+   * Atualiza overlays 3D de Battle Royale, Poderes de Heróis e Neblina de Guerra 3D.
+   */
+  setRoyaleOverlays({
+    warningSquares = [],
+    relicSquare = null,
+    shieldSquares = [],
+    frozenSquares = [],
+    fogSquares = []
+  } = {}) {
+    if (!this.royaleGroup) {
+      this.royaleGroup = new THREE.Group();
+      this.fxGroup.add(this.royaleGroup);
+    }
+    this.clearRoyaleOverlays();
+
+    if (!this._relicGeo) this._relicGeo = new THREE.OctahedronGeometry(0.24, 0);
+    if (!this._domeGeo) this._domeGeo = new THREE.SphereGeometry(0.46, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62);
+    if (!this._iceGeo) this._iceGeo = new THREE.OctahedronGeometry(0.44, 0);
+    if (!this._fogGeo) this._fogGeo = new THREE.BoxGeometry(0.96, 0.42, 0.96);
+
+    // 1. Anel de Alerta Vermelho (Zona de Colapso)
+    this.royaleWarningMeshes = [];
+    for (const { r, c } of warningSquares) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xEF4444,
+        transparent: true,
+        opacity: 0.42,
+        depthWrite: false
+      });
+      const m = new THREE.Mesh(this.markGeo, mat);
+      m.rotation.x = -Math.PI / 2;
+      const p = worldPos(r, c);
+      m.position.set(p.x, 0.019, p.z);
+      m.renderOrder = 4;
+      this.royaleGroup.add(m);
+      this.royaleWarningMeshes.push(m);
+    }
+
+    // 2. Cristal de Relíquia 3D no Centro
+    if (relicSquare) {
+      const { r, c } = squareToRC(relicSquare);
+      const p = worldPos(r, c);
+      const cMat = new THREE.MeshStandardMaterial({
+        color: 0x38BDF8,
+        emissive: 0xF4C96B,
+        emissiveIntensity: 0.65,
+        metalness: 0.4,
+        roughness: 0.15,
+        transparent: true,
+        opacity: 0.92
+      });
+      const crystal = new THREE.Mesh(this._relicGeo, cMat);
+      crystal.position.set(p.x, 0.44, p.z);
+      crystal.renderOrder = 8;
+      this.royaleGroup.add(crystal);
+      this.relicCrystalMesh = crystal;
+    }
+
+    // 3. Domos 3D de Escudo Arcano
+    for (const sq of shieldSquares) {
+      const { r, c } = squareToRC(sq);
+      const p = worldPos(r, c);
+      const sMat = new THREE.MeshBasicMaterial({
+        color: 0x38BDF8,
+        transparent: true,
+        opacity: 0.34,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const dome = new THREE.Mesh(this._domeGeo, sMat);
+      dome.position.set(p.x, 0.04, p.z);
+      dome.renderOrder = 8;
+      this.royaleGroup.add(dome);
+    }
+
+    // 4. Cristais 3D de Prisão de Gelo
+    for (const sq of frozenSquares) {
+      const { r, c } = squareToRC(sq);
+      const p = worldPos(r, c);
+      const fMat = new THREE.MeshBasicMaterial({
+        color: 0x60A5FA,
+        transparent: true,
+        opacity: 0.44,
+        wireframe: false,
+        depthWrite: false
+      });
+      const ice = new THREE.Mesh(this._iceGeo, fMat);
+      ice.position.set(p.x, 0.42, p.z);
+      ice.renderOrder = 8;
+      this.royaleGroup.add(ice);
+    }
+
+    // 5. Neblina de Guerra 3D (Fog of War)
+    for (const { r, c } of fogSquares) {
+      const p = worldPos(r, c);
+      const fogMat = new THREE.MeshBasicMaterial({
+        color: 0x0B0F17,
+        transparent: true,
+        opacity: 0.84,
+        depthWrite: false
+      });
+      const fogMesh = new THREE.Mesh(this._fogGeo, fogMat);
+      fogMesh.position.set(p.x, 0.22, p.z);
+      fogMesh.renderOrder = 9;
+      this.royaleGroup.add(fogMesh);
+    }
   }
 
   setWeather(type = 'none') {
@@ -620,6 +741,16 @@ export class FXManager {
         this.hintState.ghostMesh.position.y = 0.04 + 0.045 * hover;
         this.hintState.ghostMat.opacity = 0.38 + 0.16 * hover;
       }
+    }
+
+    if (this.relicCrystalMesh) {
+      this.relicCrystalMesh.rotation.y = time * 2.4;
+      this.relicCrystalMesh.rotation.x = Math.sin(time * 1.8) * 0.25;
+      this.relicCrystalMesh.position.y = 0.44 + Math.sin(time * 3.2) * 0.08;
+    }
+    if (this.royaleWarningMeshes && this.royaleWarningMeshes.length > 0) {
+      const wOp = 0.28 + 0.24 * Math.sin(time * 7.5);
+      for (const wm of this.royaleWarningMeshes) wm.material.opacity = wOp;
     }
 
     if (this.shockwaves && this.shockwaves.length > 0) {

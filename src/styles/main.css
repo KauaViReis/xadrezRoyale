@@ -851,3 +851,69 @@ button:focus-visible, input:focus-visible {
   to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
+.royale-hud-bar {
+  bottom: 72px;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  border-color: rgba(201, 154, 62, 0.48);
+}
+.royale-zone-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: #F4C96B;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(201, 154, 62, 0.14);
+  border: 1px solid rgba(201, 154, 62, 0.4);
+}
+.royale-zone-badge.danger {
+  color: #FCA5A5;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.6);
+  animation: lowTimePulse 0.9s infinite alternate;
+}
+.hero-power-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.hero-energy-badge {
+  font-size: 12px;
+  font-weight: 900;
+  color: #38BDF8;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+.power-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+.power-btn small {
+  font-size: 10px;
+  opacity: 0.85;
+  color: #F4C96B;
+}
+.power-btn.ult {
+  border-color: rgba(244, 201, 107, 0.55);
+  background: rgba(201, 154, 62, 0.18);
+}
+.power-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+.rush-hud {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.14);
+  border: 1px solid rgba(239, 68, 68, 0.42);
+}
+

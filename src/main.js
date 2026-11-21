@@ -31,6 +31,10 @@ import { BOT_PROFILES, getBotById, getLeague, ACHIEVEMENTS, evaluateMatchAchieve
 import { TACTICAL_PUZZLES, computeMaterialBalance } from './core/puzzles.js';
 import { VoiceNarrator } from './core/narrator.js';
 import { PiecePreviewStudio } from './engine/preview-studio.js';
+import {
+  RoyaleMatchManager, SPECIAL_RULESETS, getRingSquares,
+  computeFogVisibleSquares, generateChess960Fen
+} from './core/royale-mode.js';
 
 const $ = sel => document.querySelector(sel);
 const $$ = sel => document.querySelectorAll(sel);
@@ -41,6 +45,8 @@ const prefs = loadPrefs();
 
 /* ============ ESTADO ============ */
 const chess = new Chess();
+const royale = new RoyaleMatchManager();
+let activeRuleset = 'classic';
 let mode = 'pve';
 let aiDepth = prefs.aiDepth ?? 2;
 let playerSide = 'w';
@@ -556,6 +562,80 @@ function clearPremove() {
   fx.clearPremove();
 }
 
+function syncRoyaleVisuals() {
+  const curPly = chess.history().length;
+  boardCtx.setCollapsedRings?.(royale.collapsedRings);
+
+  const warningSquares = royale.warningRing > 0 ? getRingSquares(royale.warningRing) : [];
+  const { shields, frozen } = royale.getActiveStatusSquares(curPly);
+
+  const fogSquares = [];
+  if (royale.isFogActive() && gameActive && reviewPly === null) {
+    const persp = mode === 'pvp' ? chess.turn() : myColor;
+    const visSet = computeFogVisibleSquares(chess, persp);
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const sq = rcToSquare(r, c);
+        const isVisible = visSet.has(sq);
+        if (!isVisible) fogSquares.push({ r, c, sq });
+        if (grid[r][c]) {
+          grid[r][c].mesh.visible = isVisible || grid[r][c].color === persp;
+        }
+      }
+    }
+  } else {
+    for (const p of pieceMeshes) p.mesh.visible = true;
+  }
+
+  fx.setRoyaleOverlays({
+    warningSquares,
+    relicSquare: royale.relicSquare,
+    shieldSquares: shields,
+    frozenSquares: frozen,
+    fogSquares
+  });
+
+  const hudBar = $('#royaleHudBar');
+  const zoneBadge = $('#royaleZoneBadge');
+  const powerGrp = $('#heroPowerGroup');
+  if (!hudBar) return;
+
+  const showRoyale = gameActive && royale.isRoyaleActive();
+  const showPowers = gameActive && royale.isPowersActive();
+  hudBar.style.display = (showRoyale || showPowers) ? 'flex' : 'none';
+
+  if (zoneBadge) {
+    zoneBadge.style.display = showRoyale ? 'inline-block' : 'none';
+    if (showRoyale) {
+      zoneBadge.classList.toggle('danger', royale.warningRing > 0);
+      if (royale.warningRing === 1) {
+        zoneBadge.textContent = `⚠️ ALERTA: Borda 8×8 desaba em ${Math.max(1, 12 - curPly)} lance(s)!`;
+      } else if (royale.warningRing === 2) {
+        zoneBadge.textContent = `⚠️ ALERTA: Borda 6×6 desaba em ${Math.max(1, 26 - curPly)} lance(s)!`;
+      } else if (royale.collapsedRings === 0) {
+        zoneBadge.textContent = `🔥 Arena 8×8 · Colapso em ${Math.max(1, 12 - curPly)} lances${royale.relicSquare ? ` · 💎 Relíquia em ${royale.relicSquare.toUpperCase()}` : ''}`;
+      } else if (royale.collapsedRings === 1) {
+        zoneBadge.textContent = `🔥 Arena 6×6 · 2º Colapso em ${Math.max(1, 26 - curPly)} lances${royale.relicSquare ? ` · 💎 ${royale.relicSquare.toUpperCase()}` : ''}`;
+      } else {
+        zoneBadge.textContent = `🔥 Arena Final 4×4 · Morte Súbita!`;
+      }
+    }
+  }
+
+  if (powerGrp) {
+    powerGrp.style.display = showPowers ? 'flex' : 'none';
+    if (showPowers) {
+      const activeSide = mode === 'pvp' ? chess.turn() : myColor;
+      const myE = royale.energy[activeSide] || 0;
+      const isMyTurn = chess.turn() === activeSide && !busy;
+      if ($('#heroEnergyBadge')) $('#heroEnergyBadge').textContent = `⚡ ${myE}/3`;
+      if ($('#btnPowerShield')) $('#btnPowerShield').disabled = !isMyTurn || myE < 1;
+      if ($('#btnPowerFreeze')) $('#btnPowerFreeze').disabled = !isMyTurn || myE < 2;
+      if ($('#btnPowerUlt')) $('#btnPowerUlt').disabled = !isMyTurn || myE < 3;
+    }
+  }
+}
+
 function selectSquare(sq) {
   const { r, c } = squareToRC(sq);
   const p = grid[r][c];
@@ -583,7 +663,13 @@ function selectSquare(sq) {
 
   if (p.color !== chess.turn()) return;
   deselect();
-  const moves = chess.moves({ square: sq, verbose: true });
+  if (royale.isSquareFrozen(sq, chess.history().length)) {
+    audio.error();
+    toast('❄️ Esta peça está congelada neste turno!');
+    return;
+  }
+  const rawMoves = chess.moves({ square: sq, verbose: true });
+  const moves = royale.filterLegalMoves(rawMoves, chess.history().length);
   if (moves.length === 0) { audio.error(); return; }
 
   selectedSq = sq;
@@ -639,6 +725,7 @@ async function executeMove(moveInput, isRemote = false) {
       addCapturedToken(victim.type, victim.color);
       fx.spawnParticles(capR, capC, PIECE_THEMES[pieceThemeIdx][victim.color]);
       fx.spawnShockwave(capR, capC, 0xEF4444);
+      royale.addEnergy(moverColor, 1);
 
       const plyCount = chess.history().length;
       if (!firstBloodClaimed) {
@@ -702,6 +789,37 @@ async function executeMove(moveInput, isRemote = false) {
     audio.promote();
     fx.spawnParticles(toRC.r, toRC.c, 0xC99A3E, 18);
   }
+
+  /* Processa Estado Battle Royale & Poderes de Heróis */
+  const curPly = chess.history().length;
+  royale.onPieceMoved(move.from, move.to, move.captured ? move.to : null);
+  const rEv = royale.advanceTurn(chess, move, curPly);
+  if (rEv.relicClaimed) {
+    fx.spawnLightningBolt(toRC.r, toRC.c, 0x38BDF8);
+    fx.spawnShockwave(toRC.r, toRC.c, 0x38BDF8);
+    cam.shake(0.14, 220);
+    showEsportsBanner('💎 RELÍQUIA ANCESTRAL!', '+2⚡ Energia de Herói + Escudo Arcano ativado!', 'cyan', 2800);
+    narrator.announceEsportsEvent('relic_claim');
+  }
+  if (rEv.warningRing > 0) {
+    showEsportsBanner('⚠️ ALERTA DE COLAPSO!', 'A borda externa vai afundar em 2 lances! Evacue suas peças!', 'danger', 3200);
+    narrator.announceEsportsEvent('royale_warning');
+  }
+  if (rEv.collapsedRing > 0) {
+    for (const d of rEv.destroyedSquares) {
+      fx.spawnParticles(d.r, d.c, 0xEF4444, 16);
+      fx.spawnLightningBolt(d.r, d.c, 0xEF4444);
+      addCapturedToken(d.type, d.color);
+    }
+    rebuildBoardPieces();
+    cam.shake(0.24, 340);
+    const subMsg = rEv.destroyedSquares.length > 0
+      ? `${rEv.destroyedSquares.length} peça(s) engolida(s) pelo abismo!`
+      : `A arena encolheu para ${rEv.collapsedRing === 1 ? '6×6' : '4×4'}!`;
+    showEsportsBanner('🔥 COLAPSO DA ARENA 3D!', subMsg, 'danger', 3400);
+    narrator.announceEsportsEvent('royale_collapse');
+  }
+  syncRoyaleVisuals();
 
   if (chess.inCheck()) {
     audio.check();
@@ -847,6 +965,13 @@ async function runAIMove(overrideBot = null) {
   const bot = overrideBot || currentBotProfile();
   $('#turnTxt').textContent = `${bot.name.toUpperCase()} PENSANDO…`;
 
+  const curPly = chess.history().length;
+  const allowedMoves = royale.filterLegalMoves(chess.moves({ verbose: true }), curPly);
+  if (allowedMoves.length === 0) {
+    endGameFromBoard(chess.turn() === 'w' ? 'b' : 'w', 'Sem lances legais na Zona Royale');
+    return;
+  }
+
   let res = null;
   if (bot.style === 'stockfish') {
     res = await getStockfishHint(chess.fen(), { depth: 12, movetime: mode === 'botvsbot' && botArenaSpeed === 3 ? 250 : 750 });
@@ -854,9 +979,16 @@ async function runAIMove(overrideBot = null) {
   if (!res || !res.ok || !res.move) {
     res = await askWorker('bestMove', { fen: chess.fen(), depth: Math.min(3, bot.depth || aiDepth) });
   }
-  if (!gameActive || !res.ok || !res.move) return;
+  if (!gameActive) return;
   if (mode === 'botvsbot' && botArenaPaused) return;
-  await executeMove(res.move);
+
+  let chosen = res?.ok && res?.move ? res.move : null;
+  const isAllowed = chosen && allowedMoves.some(m => m.from === chosen.from && m.to === chosen.to);
+  if (!isAllowed) {
+    const captures = allowedMoves.filter(m => m.captured);
+    chosen = captures.length > 0 ? captures[0] : allowedMoves[0];
+  }
+  await executeMove(chosen);
 }
 
 async function endGameFromBoard(customWinner = null, customReason = '') {
@@ -1205,8 +1337,16 @@ function startMatch(newMode, opts = {}) {
   lastEvalWhiteCp = 0;
   firstBloodClaimed = false;
   lastCapturePlyByColor = { w: -99, b: -99 };
+
+  const matchRuleset = (newMode === 'online' || newMode === 'puzzle')
+    ? 'classic'
+    : (opts.ruleset || activeRuleset || 'classic');
+  royale.reset(matchRuleset);
+
   if (opts.customFen) {
     chess.load(opts.customFen);
+  } else if (matchRuleset === 'chess960') {
+    chess.load(generateChess960Fen());
   } else {
     chess.reset();
   }
@@ -1287,7 +1427,7 @@ function startMatch(newMode, opts = {}) {
     cam.resetView(side);
   } else {
     myColor = playerSide;
-    const bot = currentBotProfile();
+    const bot = opts.overrideBot || currentBotProfile();
     const botLabel = `${bot.name.toUpperCase()} (${bot.rating})`;
     $('#nameW').textContent = mode === 'pve' && playerSide === 'b' ? botLabel : (mode === 'pve' ? nick : 'BRANCAS');
     $('#nameB').textContent = mode === 'pve' && playerSide === 'w' ? botLabel : (mode === 'pve' ? nick : 'PRETAS');
@@ -1304,9 +1444,11 @@ function startMatch(newMode, opts = {}) {
   $('#overOverlay').classList.add('hide');
   $('#tvOverlay')?.classList.add('hide');
   $('#socialOverlay')?.classList.add('hide');
+  syncRoyaleVisuals();
   updateClocksUI();
   updateTurnUI();
   refreshEval();
+
 
   if (mode === 'pve' && chess.turn() !== playerSide) {
     runAIMove();
@@ -1407,6 +1549,14 @@ bindSeg('#segMode', v => {
 
 bindSeg('#segBotW', v => { botWhiteId = v; });
 bindSeg('#segBotB', v => { botBlackId = v; });
+
+bindSeg('#segRuleset', v => {
+  activeRuleset = v;
+  const meta = SPECIAL_RULESETS.find(r => r.id === v) || SPECIAL_RULESETS[0];
+  if ($('#rulesetDesc')) {
+    $('#rulesetDesc').innerHTML = `${meta.icon} <strong>${meta.name}:</strong> ${meta.desc}.`;
+  }
+});
 
 function refreshBotCardUI() {
   const bot = currentBotProfile();
