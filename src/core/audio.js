@@ -301,6 +301,38 @@ export class AudioManager {
   chat() {
     this._tone(620, 0.06, 'sine', 0.06, 780);
   }
+  click() { this._tone(580, 0.03, 'sine', 0.045, 720); }
   tick() { this._tone(960, 0.03, 'sine', 0.04); }
   error() { this._tone(160, 0.1, 'sawtooth', 0.08, 120); }
+
+  /* Passos abafados com Áudio Espacial StereoPanner na Neblina de Guerra 3D */
+  fogStep(pan = 0) {
+    if (this.muted) return;
+    const ctx = this._ensure();
+    if (!ctx) return;
+    try {
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(125, now);
+      osc.frequency.exponentialRampToValueAtTime(62, now + 0.14);
+      gain.gain.setValueAtTime(0.16, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+      if (typeof ctx.createStereoPanner === 'function') {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(Math.max(-0.9, Math.min(0.9, pan)), now);
+        osc.connect(gain);
+        gain.connect(panner);
+        panner.connect(ctx.destination);
+      } else {
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+      }
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } catch {
+      /* noop */
+    }
+  }
 }

@@ -602,10 +602,12 @@ function syncRoyaleVisuals() {
 
   const showRoyale = gameActive && royale.isRoyaleActive();
   const showPowers = gameActive && royale.isPowersActive();
-  hudBar.style.display = (showRoyale || showPowers) ? 'flex' : 'none';
+  const showFog = gameActive && royale.isFogActive();
+  const show960 = gameActive && royale.ruleset === 'chess960';
+  hudBar.style.display = (showRoyale || showPowers || showFog || show960) ? 'flex' : 'none';
 
   if (zoneBadge) {
-    zoneBadge.style.display = showRoyale ? 'inline-block' : 'none';
+    zoneBadge.style.display = (showRoyale || showFog || show960) ? 'inline-block' : 'none';
     if (showRoyale) {
       zoneBadge.classList.toggle('danger', royale.warningRing > 0);
       if (royale.warningRing === 1) {
@@ -619,6 +621,12 @@ function syncRoyaleVisuals() {
       } else {
         zoneBadge.textContent = `🔥 Arena Final 4×4 · Morte Súbita!`;
       }
+    } else if (showFog) {
+      zoneBadge.classList.remove('danger');
+      zoneBadge.textContent = `🌫️ Neblina de Guerra 3D · ${64 - fogSquares.length}/64 casas visíveis`;
+    } else if (show960) {
+      zoneBadge.classList.remove('danger');
+      zoneBadge.textContent = '🎲 Xadrez 960 (Fischer Random) · Primeira fileira sorteada';
     }
   }
 
@@ -755,6 +763,10 @@ async function executeMove(moveInput, isRemote = false) {
   grid[toRC.r][toRC.c] = piece;
   await animatePieceMove(piece, toRC.r, toRC.c, move.piece === 'n');
 
+  const isHiddenInFog = royale.isFogActive()
+    && moverColor !== (mode === 'pvp' ? chess.turn() : myColor)
+    && !computeFogVisibleSquares(chess, mode === 'pvp' ? chess.turn() : myColor).has(move.to);
+
   if (move.flags.includes('k') || move.flags.includes('q')) {
     const rookFromC = move.flags.includes('k') ? 7 : 0;
     const rookToC = move.flags.includes('k') ? 5 : 3;
@@ -769,6 +781,10 @@ async function executeMove(moveInput, isRemote = false) {
   } else if (move.captured) {
     audio.capture();
     vibrate(35);
+  } else if (isHiddenInFog) {
+    const pan = (toRC.c - 3.5) / 3.5;
+    audio.fogStep(pan);
+    toast(`🌫️ Som de movimento na neblina (${toRC.c < 4 ? 'Ala da Dama' : 'Ala do Rei'})…`, 1800);
   } else {
     audio.move();
     vibrate(12);
@@ -825,12 +841,16 @@ async function executeMove(moveInput, isRemote = false) {
     audio.check();
     cam.shake(0.11, 200);
   }
-  narrator.announceMove(move, { isCheck: chess.inCheck(), isCheckmate: chess.isCheckmate() });
+  if (!isHiddenInFog) {
+    narrator.announceMove(move, { isCheck: chess.inCheck(), isCheckmate: chess.isCheckmate() });
+    fx.setLastMove(fromRC.r, fromRC.c, toRC.r, toRC.c);
+  } else {
+    fx.clearLastMove();
+  }
   const curOpening = detectOpening(chess.history());
   if (curOpening && chess.history().length <= 12) {
     narrator.announceOpening(curOpening);
   }
-  fx.setLastMove(fromRC.r, fromRC.c, toRC.r, toRC.c);
   renderHistory();
   updateTurnUI();
   refreshEval();

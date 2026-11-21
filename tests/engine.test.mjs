@@ -414,4 +414,30 @@ test('Modo Heróis & Poderes: Barra de 3 Cargas ativa Escudo Arcano, Prisão de 
   assert.equal(filtered[0].from, 'e7');
 });
 
+test('Neblina de Guerra 3D (Fog of War) e Xadrez 960 (Fischer Random) geram estados válidos', async () => {
+  const { computeFogVisibleSquares, generateChess960Fen } = await import('../src/core/royale-mode.js');
+  const c = new Chess();
+  const visW = computeFogVisibleSquares(c, 'w');
+  // Na posição inicial, as Brancas enxergam as fileiras 1..4 (32 casas), mas não a fileira 8
+  assert.ok(visW.has('e4'));
+  assert.ok(visW.has('f3'));
+  assert.ok(!visW.has('e8'));
+  assert.ok(!visW.has('a8'));
+
+  // Testa 25 sementes distintas do Xadrez 960 para garantir bispos em cores opostas e Rei entre Torres
+  for (let seed = 0; seed < 960; seed += 37) {
+    const fen = generateChess960Fen(seed);
+    const c960 = new Chess(fen);
+    assert.ok(c960.moves().length >= 18 && c960.moves().length <= 20);
+    const rank1 = fen.split(' ')[0].split('/')[7];
+    const bFirst = rank1.indexOf('B');
+    const bLast = rank1.lastIndexOf('B');
+    assert.notEqual(bFirst % 2, bLast % 2, 'Bispos devem estar em casas de cores opostas no Xadrez 960');
+    const rFirst = rank1.indexOf('R');
+    const rLast = rank1.lastIndexOf('R');
+    const kIdx = rank1.indexOf('K');
+    assert.ok(rFirst < kIdx && kIdx < rLast, 'Rei deve estar entre as duas Torres no Xadrez 960');
+  }
+});
+
 
