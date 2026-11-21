@@ -1169,13 +1169,18 @@ function bindSeg(sel, cb) {
 
 bindSeg('#segMode', v => {
   const isOnline = v === 'online';
-  $('#localOpts').style.display = isOnline ? 'none' : 'block';
+  const isArena = v === 'botvsbot';
+  $('#localOpts').style.display = (!isOnline && !isArena) ? 'block' : 'none';
+  $('#botArenaOpts').style.display = isArena ? 'block' : 'none';
   $('#onlineOpts').style.display = isOnline ? 'block' : 'none';
   $('#diffRow').style.display = v === 'pve' ? 'flex' : 'none';
   $('#sideRow').style.display = v === 'pve' ? 'flex' : 'none';
   mode = v;
   if (isOnline) ensureOnline();
 });
+
+bindSeg('#segBotW', v => { botWhiteId = v; });
+bindSeg('#segBotB', v => { botBlackId = v; });
 
 function refreshBotCardUI() {
   const bot = currentBotProfile();
@@ -1199,6 +1204,10 @@ bindSeg('#segTcOnline', v => {
 });
 bindSeg('#segEval', v => { evalVisible = v === '1'; savePrefs(); refreshEval(); });
 
+/* Skin 3D das Peças (Staunton / Cristal / Cyber Neon) */
+bindSeg('#segPieceStyle', v => { applyPieceStyle(v); });
+document.querySelectorAll('#segPieceStyle .seg').forEach(b => b.classList.toggle('active', b.dataset.val === pieceStyle));
+
 let manualQualityMode = 'auto';
 bindSeg('#segQuality', v => {
   manualQualityMode = v;
@@ -1207,13 +1216,31 @@ bindSeg('#segQuality', v => {
     renderer, lights, fx, materials,
     boardTheme: BOARD_THEMES[boardThemeIdx],
     board: boardCtx,
-    pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx] }
+    pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx], style: pieceStyle }
   });
 });
+
+/* Rádio Royale: Música Ambiente + Troca de Estação */
 bindSeg('#segMusic', v => { audio.setMusic(v === '1'); savePrefs(); });
 if (!audio.musicEnabled) {
   document.querySelectorAll('#segMusic .seg').forEach(b => b.classList.toggle('active', b.dataset.val === '0'));
 }
+bindSeg('#segMusicStyle', v => {
+  audio.setMusicStyle(v);
+  if (audio.musicEnabled && !audio.muted && !audio.musicPlaying) audio.startMusic();
+  savePrefs();
+  toast(`🎵 Estação: ${v.toUpperCase()}`);
+});
+document.querySelectorAll('#segMusicStyle .seg').forEach(b => b.classList.toggle('active', b.dataset.val === audio.musicStyle));
+
+/* Narrador de Voz (Português) */
+bindSeg('#segNarrator', v => {
+  narrator.setEnabled(v === '1');
+  savePrefs();
+  if (narrator.enabled) narrator.speak('Narrador de voz ativado!');
+});
+document.querySelectorAll('#segNarrator .seg').forEach(b => b.classList.toggle('active', b.dataset.val === (narrator.enabled ? '1' : '0')));
+
 bindSeg('#segHaptics', v => { setHaptics(v === '1'); });
 
 let activeArrowColor = 'green';
@@ -1226,6 +1253,141 @@ document.querySelectorAll('.arrow-color-btn').forEach(btn => {
 $('#btnClearArrows').onclick = () => fx.clearManualAnnotations();
 
 $('#btnStartLocal').onclick = () => startMatch(mode === 'pvp' ? 'pvp' : 'pve');
+$('#btnStartBotArena').onclick = () => startMatch('botvsbot');
+$('#btnStartPuzzles').onclick = () => {
+  const firstUnsolved = TACTICAL_PUZZLES.findIndex(p => !solvedPuzzles.has(p.id));
+  startPuzzle(firstUnsolved >= 0 ? firstUnsolved : 0);
+};
+
+/* Controles da Arena Bot vs Bot + Botão Assumir Controle */
+$('#btnBotPause').onclick = () => {
+  botArenaPaused = !botArenaPaused;
+  $('#btnBotPause').textContent = botArenaPaused ? '▶ Continuar' : '⏸ Pausar';
+  if (!botArenaPaused) scheduleBotArenaTurn();
+};
+$('#btnBotSpeed').onclick = () => {
+  botArenaSpeed = (botArenaSpeed % 3) + 1;
+  $('#btnBotSpeed').textContent = botArenaSpeed === 3 ? '⚡ Turbo' : `⚡ ${botArenaSpeed}x`;
+};
+$('#btnBotOrbit').onclick = () => {
+  botOrbitEnabled = !botOrbitEnabled;
+  $('#btnBotOrbit').textContent = botOrbitEnabled ? '🎥 Órbita: ON' : '🎥 Órbita: OFF';
+};
+function takeOverArenaSide(side) {
+  if (mode !== 'botvsbot') return;
+  clearTimeout(botArenaTimer);
+  mode = 'pve';
+  playerSide = side;
+  myColor = side;
+  const oppBotId = side === 'w' ? botBlackId : botWhiteId;
+  const oppIdx = BOT_PROFILES.findIndex(b => b.id === oppBotId);
+  if (oppIdx >= 0) aiDepth = oppIdx + 1;
+  $('#botArenaBar').style.display = 'none';
+  if (side === 'w') $('#nameW').textContent = 'VOCÊ (ASSUMIU)';
+  else $('#nameB').textContent = 'VOCÊ (ASSUMIU)';
+  cam.resetView(side);
+  toast(`🎮 Você assumiu as ${side === 'w' ? 'Brancas' : 'Pretas'}!`);
+  updateTurnUI();
+  if (chess.turn() !== playerSide) runAIMove();
+}
+$('#btnTakeWhite').onclick = () => takeOverArenaSide('w');
+$('#btnTakeBlack').onclick = () => takeOverArenaSide('b');
+
+/* Controles do Modo Puzzles */
+$('#btnPuzzleHint').onclick = () => {
+  if (mode !== 'puzzle') return;
+  const puz = TACTICAL_PUZZLES[puzzleIdx];
+  const uci = puz?.moves?.[puzzleStep];
+  if (!uci) return;
+  const from = uci.slice(0, 2);
+  const to = uci.slice(2, 4);
+  const moving = chess.get(from);
+  fx.setHint({ from, to, pieceType: moving?.type || 'p', color: moving?.color || chess.turn(), pv: [{ from, to }] });
+  toast(`💡 Dica: mova a peça de ${from.toUpperCase()} para ${to.toUpperCase()}`);
+};
+$('#btnPuzzleNext').onclick = () => startPuzzle((puzzleIdx + 1) % TACTICAL_PUZZLES.length);
+$('#btnPuzzleExit').onclick = () => {
+  $('#puzzleBar').style.display = 'none';
+  $('#menuOverlay').classList.remove('hide');
+};
+
+/* Importar / Exportar PGN & FEN */
+$('#btnCopyPgn').onclick = () => {
+  const pgn = chess.pgn() || '(sem lances ainda)';
+  navigator.clipboard?.writeText(pgn);
+  toast('📋 PGN copiado para a área de transferência!');
+};
+$('#btnCopyFen').onclick = () => {
+  navigator.clipboard?.writeText(chess.fen());
+  toast('📋 FEN atual copiado!');
+};
+$('#btnLoadFen').onclick = () => {
+  const fen = window.prompt('Cole a string FEN da posição para jogar:', chess.fen());
+  if (!fen) return;
+  try {
+    const test = new Chess(fen.trim());
+    startMatch(mode === 'pvp' ? 'pvp' : 'pve', { customFen: test.fen() });
+    toast('📥 Posição FEN carregada!');
+  } catch {
+    toast('❌ FEN inválido! Verifique o formato.');
+  }
+};
+
+/* Chat ao Vivo por Partida + Reações Rápidas (Emotes) */
+function appendChatMessage(msg, isMe = false) {
+  const box = $('#chatMessages');
+  if (!box) return;
+  const empty = box.querySelector('.chat-empty');
+  if (empty) empty.remove();
+  const row = document.createElement('div');
+  row.className = `chat-msg ${isMe ? 'me' : ''}`;
+  const tag = msg.spectate ? ' 📺' : '';
+  const strong = document.createElement('strong');
+  strong.textContent = `${msg.name || 'JOGADOR'}${tag}`;
+  const body = document.createElement('span');
+  body.textContent = msg.text;
+  row.appendChild(strong);
+  row.appendChild(body);
+  box.appendChild(row);
+  box.scrollTop = box.scrollHeight;
+  if (!isMe) {
+    audio.chat();
+    if (!$('#chatBox').classList.contains('open')) {
+      $('#chatUnread').style.display = 'block';
+      toast(`💬 ${msg.name}: ${msg.text}`, 2200);
+    }
+  }
+}
+
+function sendChatText(text, isEmote = false) {
+  const clean = String(text || '').trim().slice(0, 140);
+  if (!clean) return;
+  if (mode === 'online' && online.game) {
+    online.sendChat(clean, isEmote);
+  } else {
+    appendChatMessage({ name: nick, text: clean, isEmote, ts: Date.now() }, true);
+  }
+}
+
+$('#btnChat').onclick = () => {
+  const box = $('#chatBox');
+  const opening = !box.classList.contains('open');
+  box.classList.toggle('open', opening);
+  if (opening) $('#chatUnread').style.display = 'none';
+};
+$('#btnCloseChat').onclick = () => $('#chatBox').classList.remove('open');
+$('#chatForm').onsubmit = e => {
+  e.preventDefault();
+  const inp = $('#chatInput');
+  if (!inp.value.trim()) return;
+  sendChatText(inp.value, false);
+  inp.value = '';
+};
+document.querySelectorAll('#chatEmotes .emote-btn').forEach(btn => {
+  btn.onclick = () => sendChatText(btn.dataset.emote, true);
+});
+online.onChatMessage = (msg, isMe) => appendChatMessage(msg, isMe);
+
 $('#btnResumeGame').onclick = () => $('#menuOverlay').classList.add('hide');
 $('#btnNewMenu').onclick = () => $('#menuOverlay').classList.remove('hide');
 $('#btnHome').onclick = () => $('#menuOverlay').classList.remove('hide');

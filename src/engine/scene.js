@@ -27,7 +27,7 @@ export function createScene(canvas) {
   mkPlane(0xFFF6E8, 0, 12, 0, 14, 14);
   mkPlane(0xD9A959, -10, 5, 6, 8, 6);
   mkPlane(0x9AB4D6, 10, 4, -6, 8, 6);
-  scene.environment = pmrem.fromScene(envScene, 0.05).texture;
+  scene.environment = pmrem.fromScene(envScene, 0.04).texture;
   pmrem.dispose();
 
   const hemi = new THREE.HemisphereLight(0xF5EFE6, 0x1A1510, 0.65);

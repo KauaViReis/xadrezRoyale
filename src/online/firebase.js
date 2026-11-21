@@ -651,7 +651,7 @@ export class OnlineManager {
           onChallenge({ id: ch.doc.id, ...ch.doc.data() });
         }
       });
-    });
+    }, () => { /* silencia permission-denied caso regras de chess_challenges ainda não tenham sido publicadas */ });
   }
 
   listenOutgoingChallenge(onAccepted) {
@@ -663,7 +663,7 @@ export class OnlineManager {
         deleteDoc(doc(this.db, 'chess_challenges', this.uid)).catch(() => {});
         onAccepted(d.gameId);
       }
-    });
+    }, () => {});
   }
 
   async acceptChallenge(ch) {
