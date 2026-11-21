@@ -964,11 +964,91 @@ cam.onTap = async (cx, cy) => {
   }
 };
 
-/* Hover tátil no desktop */
+/* Segurar e Arrastar Peças em 3D (Hold & Drag) */
+let dragPiece = null;
+let dragOriginPos = null;
+const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.55);
+const dragHitPt = new THREE.Vector3();
+
+cam.onPieceDragStart = (cx, cy) => {
+  if (!gameActive || busy || reviewPly !== null || cam.arrowMode || online.game?.spectate || mode === 'botvsbot') return false;
+  if (mode === 'pve' && chess.turn() !== playerSide) return false;
+  if (mode === 'online' && chess.turn() !== myColor) return false;
+
+  const rect = canvas.getBoundingClientRect();
+  ptr.x = ((cx - rect.left) / rect.width) * 2 - 1;
+  ptr.y = -((cy - rect.top) / rect.height) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+
+  const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === chess.turn()).map(p => p.mesh), true);
+  if (!hits.length) return false;
+  const p = hits[0].object.userData.piece;
+  if (!p) return false;
+  const sq = rcToSquare(p.r, p.c);
+  const moves = chess.moves({ square: sq, verbose: true });
+  if (!moves.length) return false;
+
+  dragPiece = p;
+  dragOriginPos = worldPos(p.r, p.c);
+  selectSquare(sq);
+  return true;
+};
+
+cam.onPieceDragMove = (cx, cy, moved) => {
+  if (!dragPiece || moved < 8) return;
+  const rect = canvas.getBoundingClientRect();
+  ptr.x = ((cx - rect.left) / rect.width) * 2 - 1;
+  ptr.y = -((cy - rect.top) / rect.height) * 2 + 1;
+  ray.setFromCamera(ptr, camera);
+
+  if (ray.ray.intersectPlane(dragPlane, dragHitPt)) {
+    dragPiece.mesh.position.set(
+      Math.max(-4.4, Math.min(4.4, dragHitPt.x)),
+      0.55,
+      Math.max(-4.4, Math.min(4.4, dragHitPt.z))
+    );
+  }
+  const hit = cam.screenToSquare(cx, cy);
+  if (hit) {
+    const leg = legalFromSelected.find(m => m.to === hit.sq);
+    if (leg) fx.setDragRing(hit.r, hit.c, Boolean(leg.captured));
+    else fx.clearDragRing();
+  } else {
+    fx.clearDragRing();
+  }
+};
+
+cam.onPieceDragEnd = async (cx, cy, moved, cancelled) => {
+  if (!dragPiece) return;
+  const p = dragPiece;
+  const origin = dragOriginPos;
+  dragPiece = null;
+  dragOriginPos = null;
+  fx.clearDragRing();
+
+  if (cancelled || moved < 8) {
+    p.mesh.position.set(origin.x, selectedSq === rcToSquare(p.r, p.c) ? 0.14 : 0, origin.z);
+    return;
+  }
+
+  const hit = cam.screenToSquare(cx, cy);
+  const matching = hit ? legalFromSelected.filter(m => m.to === hit.sq) : [];
+  if (matching.length > 0 && selectedSq) {
+    p.mesh.position.set(origin.x, 0, origin.z);
+    let promo;
+    if (matching.some(m => m.promotion)) promo = await askPromotion();
+    await executeMove({ from: selectedSq, to: hit.sq, promotion: promo });
+  } else {
+    p.mesh.position.set(origin.x, 0, origin.z);
+    deselect();
+  }
+};
+
+/* Hover tátil no desktop + Ghost Ring nas casas legais */
 let hoveredPiece = null;
 if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
   canvas.addEventListener('pointermove', e => {
-    if (!gameActive || busy || cam.dragging || cam.arrowMode || reviewPly !== null || qualityTier === 'low' || mode === 'botvsbot') {
+    if (!gameActive || busy || cam.dragging || cam.pieceDragging || cam.arrowMode || reviewPly !== null || qualityTier === 'low' || mode === 'botvsbot') {
       if (hoveredPiece) {
         const sq = rcToSquare(hoveredPiece.r, hoveredPiece.c);
         if (sq !== selectedSq) hoveredPiece.mesh.position.y = 0;
@@ -980,6 +1060,14 @@ if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
     ptr.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ptr.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     ray.setFromCamera(ptr, camera);
+
+    if (selectedSq && legalFromSelected.length) {
+      const hit = cam.screenToSquare(e.clientX, e.clientY);
+      const leg = hit ? legalFromSelected.find(m => m.to === hit.sq) : null;
+      if (leg) fx.setDragRing(hit.r, hit.c, Boolean(leg.captured));
+      else fx.clearDragRing();
+    }
+
     const activeColor = mode === 'online' ? myColor : chess.turn();
     const hits = ray.intersectObjects(pieceMeshes.filter(p => p.color === activeColor).map(p => p.mesh), true);
     const next = hits.length ? hits[0].object.userData.piece : null;

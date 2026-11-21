@@ -91,6 +91,32 @@ export class FXManager {
       if (m.material) m.material.dispose();
     }
     this.indicators = [];
+    this.clearDragRing();
+  }
+
+  setDragRing(r, c, isCapture = false) {
+    if (!isValidRC(r, c)) { this.clearDragRing(); return; }
+    if (!this.dragRing) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x00F0FF,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false
+      });
+      this.dragRing = new THREE.Mesh(this.ringGeo, mat);
+      this.dragRing.rotation.x = -Math.PI / 2;
+      this.dragRing.renderOrder = 6;
+      this.dragRing.userData = { sharedGeo: true };
+      this.fxGroup.add(this.dragRing);
+    }
+    const p = worldPos(r, c);
+    this.dragRing.position.set(p.x, 0.024, p.z);
+    this.dragRing.material.color.setHex(isCapture ? 0xEF4444 : 0x00F0FF);
+    this.dragRing.visible = true;
+  }
+
+  clearDragRing() {
+    if (this.dragRing) this.dragRing.visible = false;
   }
 
   /* ==================== LAST MOVE (y = 0.012, rO = 1) ==================== */

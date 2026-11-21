@@ -240,6 +240,13 @@ export class CameraController {
           this.arrowPointerId = e.pointerId;
           this.arrowMoved = 0;
           this.onArrowDragStart?.(this._pointerPayload(e, 0));
+        } else if (this.onPieceDragStart?.(e.clientX, e.clientY, e)) {
+          this.dragging = false;
+          this.pieceDragging = true;
+          this.pieceDragPointerId = e.pointerId;
+          this.downX = e.clientX;
+          this.downY = e.clientY;
+          this.moved = 0;
         } else {
           this.dragging = true;
           this.downX = e.clientX;
@@ -247,6 +254,11 @@ export class CameraController {
           this.moved = 0;
         }
       } else if (this.pointers.size === 2) {
+        if (this.pieceDragging) {
+          this.pieceDragging = false;
+          this.pieceDragPointerId = null;
+          this.onPieceDragEnd?.(e.clientX, e.clientY, this.moved, true);
+        }
         if (this.arrowDragging) {
           const moved = this.arrowMoved;
           this.arrowDragging = false;
@@ -277,7 +289,10 @@ export class CameraController {
       const dy = e.clientY - prev.y;
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-      if (this.pointers.size === 1 && this.arrowMode && this.arrowDragging && e.pointerId === this.arrowPointerId) {
+      if (this.pointers.size === 1 && this.pieceDragging && e.pointerId === this.pieceDragPointerId) {
+        this.moved += Math.hypot(dx, dy);
+        this.onPieceDragMove?.(e.clientX, e.clientY, this.moved);
+      } else if (this.pointers.size === 1 && this.arrowMode && this.arrowDragging && e.pointerId === this.arrowPointerId) {
         this.arrowMoved += Math.hypot(dx, dy);
         this.onArrowDragMove?.(this._pointerPayload(e, this.arrowMoved));
       } else if (this.pointers.size === 1 && this.dragging) {
@@ -307,6 +322,21 @@ export class CameraController {
         this.rightPointerId = null;
         this.rightMoved = 0;
         this.onRightUp?.({ ...this._pointerPayload(e, moved), cancelled: e.type === 'pointercancel' });
+        return;
+      }
+
+      if (this.pieceDragging && e.pointerId === this.pieceDragPointerId) {
+        const moved = this.moved;
+        const cancelled = e.type === 'pointercancel';
+        this.pieceDragging = false;
+        this.pieceDragPointerId = null;
+        this.pointers.delete(e.pointerId);
+        if (this.pointers.size < 2) this.pinchD = 0;
+        this.onPieceDragEnd?.(e.clientX, e.clientY, moved, cancelled);
+        if (!cancelled && moved < 8) {
+          this.onLeftTap?.(e.clientX, e.clientY, e);
+          this.onTap?.(e.clientX, e.clientY, e);
+        }
         return;
       }
 
