@@ -1,17 +1,25 @@
 /* ============================================================
-   XADREZ ROYALE — Áudio Tátil Sintetizado (Web Audio API)
-   Zero arquivos externos; som de madeira, captura, xeque e mate.
+   XADREZ ROYALE — Áudio Tátil Sintetizado + Rádio Procedural (4 Estações)
+   Zero arquivos externos; efeitos táteis + 4 trilhas Web Audio API.
    ============================================================ */
+
+export const MUSIC_STATIONS = [
+  { id: 'imperial', name: '🏛️ Imperial',  desc: 'Pad clássico suave de salão real' },
+  { id: 'vice',     name: '🌴 Vice 80s',  desc: 'Synthwave GTA VI com arpejo neon' },
+  { id: 'lofi',     name: '☕ Lo-Fi Club', desc: 'Acordes jazzísticos relaxantes' },
+  { id: 'tension',  name: '⚔️ Tensão GM', desc: 'Pulso cinematográfico de torneio' }
+];
 
 export class AudioManager {
   constructor() {
     this.ctx = null;
     this.muted = false;
     this.musicEnabled = true;
+    this.musicStyle = 'imperial';
     this.musicPlaying = false;
     this._musicTimer = null;
     this._musicMaster = null;
-    this._chordIdx = 0;
+    this._stepIdx = 0;
   }
 
   _ensure() {
@@ -42,54 +50,114 @@ export class AudioManager {
     osc.stop(now + dur);
   }
 
-  /* Música ambiente procedural (pad lo-fi / Vice Sunset suave) */
   startMusic() {
     if (this.muted || !this.musicEnabled || this.musicPlaying) return;
     const ctx = this._ensure();
     if (!ctx) return;
 
     this.musicPlaying = true;
+    this._stepIdx = 0;
     this._musicMaster = ctx.createGain();
     this._musicMaster.gain.setValueAtTime(0.001, ctx.currentTime);
-    this._musicMaster.gain.linearRampToValueAtTime(0.085, ctx.currentTime + 1.5);
+    this._musicMaster.gain.linearRampToValueAtTime(0.09, ctx.currentTime + 1.2);
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(880, ctx.currentTime);
+    filter.frequency.setValueAtTime(this.musicStyle === 'vice' ? 1450 : 880, ctx.currentTime);
     this._musicMaster.connect(filter);
     filter.connect(ctx.destination);
 
-    /* Progressão relaxante Dm9 -> G13 -> Cmaj9 -> A7sus4 */
-    const chords = [
-      [146.83, 261.63, 329.63, 440.00],
-      [98.00,  246.94, 329.63, 392.00],
-      [130.81, 246.94, 293.66, 392.00],
-      [110.00, 220.00, 293.66, 392.00]
-    ];
-
-    const playChord = () => {
-      if (!this.musicPlaying || this.muted || !this.musicEnabled || !this._musicMaster) return;
+    const playNote = (freq, dur, type, amp, attack = 0.04) => {
+      if (!this.musicPlaying || !this._musicMaster) return;
       const now = ctx.currentTime;
-      const notes = chords[this._chordIdx % chords.length];
-      this._chordIdx++;
-
-      notes.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = idx === 0 ? 'triangle' : 'sine';
-        osc.frequency.setValueAtTime(freq, now);
-        g.gain.setValueAtTime(0.0001, now);
-        g.gain.linearRampToValueAtTime(idx === 0 ? 0.34 : 0.18, now + 0.8);
-        g.gain.exponentialRampToValueAtTime(0.0001, now + 3.4);
-        osc.connect(g);
-        g.connect(this._musicMaster);
-        osc.start(now);
-        osc.stop(now + 3.5);
-      });
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.linearRampToValueAtTime(amp, now + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+      osc.connect(g);
+      g.connect(this._musicMaster);
+      osc.start(now);
+      osc.stop(now + dur + 0.04);
     };
 
-    playChord();
-    this._musicTimer = setInterval(playChord, 3100);
+    if (this.musicStyle === 'vice') {
+      /* Vice Synthwave 80s (GTA VI): baixo arpejado pulsante + pad neon */
+      const bassLine = [110, 110, 130.81, 146.83, 164.81, 146.83, 130.81, 98.0];
+      const pads = [
+        [220.0, 261.63, 329.63],
+        [174.61, 220.0, 261.63],
+        [196.0, 246.94, 293.66],
+        [164.81, 207.65, 246.94]
+      ];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const i = this._stepIdx++;
+        const bFreq = bassLine[i % bassLine.length];
+        playNote(bFreq, 0.36, 'sawtooth', 0.22, 0.015);
+        if (i % 2 === 0) playNote(bFreq * 0.5, 0.42, 'sine', 0.26, 0.01);
+        if (i % 8 === 0) {
+          const ch = pads[Math.floor(i / 8) % pads.length];
+          ch.forEach(f => playNote(f, 3.2, 'triangle', 0.12, 0.4));
+        }
+      };
+      step();
+      this._musicTimer = setInterval(step, 380);
+    } else if (this.musicStyle === 'lofi') {
+      /* Lo-Fi Chess Club: acordes jazzísticos quentes + melodia suave */
+      const chords = [
+        [146.83, 220.0, 261.63, 329.63],
+        [196.0, 246.94, 329.63, 392.0],
+        [130.81, 196.0, 246.94, 293.66],
+        [110.0, 164.81, 220.0, 261.63]
+      ];
+      const melody = [523.25, 493.88, 440.0, 392.0, 329.63, 392.0, 440.0, 0];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const i = this._stepIdx++;
+        if (i % 4 === 0) {
+          const ch = chords[Math.floor(i / 4) % chords.length];
+          ch.forEach((f, idx) => playNote(f, 2.7, idx === 0 ? 'triangle' : 'sine', idx === 0 ? 0.28 : 0.14, 0.18));
+        }
+        const m = melody[i % melody.length];
+        if (m > 0) playNote(m, 0.55, 'sine', 0.10, 0.03);
+      };
+      step();
+      this._musicTimer = setInterval(step, 680);
+    } else if (this.musicStyle === 'tension') {
+      /* Tensão de Grande Mestre: pulso grave orquestral + notas agudas esparsas */
+      const pulse = [73.42, 73.42, 87.31, 73.42, 82.41, 73.42, 98.0, 65.41];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const i = this._stepIdx++;
+        const p = pulse[i % pulse.length];
+        playNote(p, 0.5, 'triangle', 0.30, 0.02);
+        if (i % 4 === 0) playNote(p * 3, 1.4, 'sine', 0.10, 0.25);
+        if (i % 6 === 3) playNote(p * 4, 0.35, 'sine', 0.08, 0.02);
+      };
+      step();
+      this._musicTimer = setInterval(step, 520);
+    } else {
+      /* Clássico Imperial (Ambient Pad original) */
+      const chords = [
+        [146.83, 261.63, 329.63, 440.00],
+        [98.00,  246.94, 329.63, 392.00],
+        [130.81, 246.94, 293.66, 392.00],
+        [110.00, 220.00, 293.66, 392.00]
+      ];
+      const step = () => {
+        if (!this.musicPlaying || this.muted || !this.musicEnabled) return;
+        const notes = chords[this._stepIdx % chords.length];
+        this._stepIdx++;
+        notes.forEach((freq, idx) => {
+          playNote(freq, 3.4, idx === 0 ? 'triangle' : 'sine', idx === 0 ? 0.34 : 0.18, 0.8);
+        });
+      };
+      step();
+      this._musicTimer = setInterval(step, 3100);
+    }
   }
 
   stopMusic() {
@@ -105,6 +173,16 @@ export class AudioManager {
     this.musicEnabled = !!on;
     if (!this.musicEnabled || this.muted) this.stopMusic();
     else this.startMusic();
+  }
+
+  setMusicStyle(styleId) {
+    const valid = MUSIC_STATIONS.some(s => s.id === styleId) ? styleId : 'imperial';
+    if (this.musicStyle === valid && this.musicPlaying) return;
+    this.musicStyle = valid;
+    if (this.musicPlaying) {
+      this.stopMusic();
+      this.startMusic();
+    }
   }
 
   setMuted(muted) {
@@ -148,6 +226,9 @@ export class AudioManager {
   }
   hint() {
     [587, 880].forEach((f, i) => setTimeout(() => this._tone(f, 0.14, 'sine', 0.08), i * 65));
+  }
+  chat() {
+    this._tone(620, 0.06, 'sine', 0.06, 780);
   }
   tick() { this._tone(960, 0.03, 'sine', 0.04); }
   error() { this._tone(160, 0.1, 'sawtooth', 0.08, 120); }

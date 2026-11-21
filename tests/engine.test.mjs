@@ -285,3 +285,51 @@ test('getLeague, BOT_PROFILES e evaluateMatchAchievements funcionam corretamente
   assert.ok(unlocked.includes('streak_3'));
   assert.ok(unlocked.includes('beat_helena'));
 });
+
+test('TACTICAL_PUZZLES possui 20 puzzles com FENs e sequências 100% legais', async () => {
+  const { TACTICAL_PUZZLES, computeMaterialBalance } = await import('../src/core/puzzles.js');
+  assert.equal(TACTICAL_PUZZLES.length, 20);
+  for (const p of TACTICAL_PUZZLES) {
+    const c = new Chess(p.fen);
+    assert.ok(p.moves.length >= 1, `Puzzle ${p.id} sem lances`);
+    for (const uci of p.moves) {
+      const m = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+      assert.ok(m, `Lance ilegal ${uci} no puzzle ${p.id} (${p.title})`);
+    }
+  }
+  const cBal = new Chess('4k3/8/8/8/8/8/8/3QK2R w - - 0 1');
+  const bal = computeMaterialBalance(cBal);
+  assert.equal(bal.diffW, 14);
+  assert.equal(bal.diffB, 0);
+});
+
+test('createChessGeometriesByStyle gera skins 3D Staunton, Cristal e Cyber Neon válidas', async () => {
+  const { createChessGeometriesByStyle, disposeChessGeometries, PIECE_STYLES } = await import('../src/engine/pieces3d.js');
+  assert.equal(PIECE_STYLES.length, 3);
+  for (const st of ['staunton', 'crystal', 'cyber']) {
+    const geos = createChessGeometriesByStyle('medium', st);
+    for (const k of ['p', 'r', 'n', 'b', 'q', 'k']) {
+      assert.ok(geos[k], `Missing ${k} for style ${st}`);
+      assert.ok(geos[k].attributes.position.count > 24);
+    }
+    disposeChessGeometries(geos);
+  }
+});
+
+test('MUSIC_STATIONS e VoiceNarrator funcionam com segurança no Node.js', async () => {
+  const { AudioManager, MUSIC_STATIONS } = await import('../src/core/audio.js');
+  const { VoiceNarrator } = await import('../src/core/narrator.js');
+  assert.equal(MUSIC_STATIONS.length, 4);
+  const am = new AudioManager();
+  am.setMusicStyle('vice');
+  assert.equal(am.musicStyle, 'vice');
+  am.setMusicStyle('invalido');
+  assert.equal(am.musicStyle, 'imperial');
+
+  const vn = new VoiceNarrator();
+  vn.setEnabled(true);
+  vn.announceMove({ piece: 'q', color: 'w', to: 'f7', captured: 'p', flags: 'c' }, { isCheckmate: true });
+  vn.resetMatch();
+  assert.equal(vn.lastOpeningSpoken, null);
+});
+

@@ -358,3 +358,108 @@ button:focus-visible, input:focus-visible {
   .p-name { max-width: 82px; }
   .act-btn span { display: none; }
 }
+
+/* ============ MEGA UPDATE V2: CHAT, ARENA BOT×BOT, PUZZLES, MATERIAL, PGN/FEN ============ */
+.p-caps-row { display: flex; align-items: center; gap: 6px; min-height: 14px; }
+.p-mat {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #0D0B08;
+  background: var(--gold);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.hist-io-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.chat-box {
+  position: fixed;
+  left: 14px;
+  bottom: 72px;
+  width: min(300px, calc(100vw - 28px));
+  max-height: 360px;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  z-index: 38;
+  border-radius: 14px;
+}
+.chat-box.open { display: flex; }
+.chat-messages {
+  flex: 1;
+  min-height: 120px;
+  max-height: 190px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-right: 4px;
+}
+.chat-empty { font-size: 0.75rem; color: var(--muted); text-align: center; padding: 18px 4px; }
+.chat-msg {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  word-break: break-word;
+}
+.chat-msg.me { background: rgba(201,154,62,0.18); border: 1px solid rgba(201,154,62,0.35); }
+.chat-msg strong { color: var(--gold); font-size: 0.72rem; display: block; margin-bottom: 2px; }
+.chat-emotes {
+  display: flex;
+  gap: 5px;
+  justify-content: space-between;
+}
+.emote-btn {
+  flex: 1;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 8px;
+  padding: 5px 0;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.emote-btn:hover { background: rgba(201,154,62,0.22); transform: translateY(-1px); }
+.chat-form { display: flex; gap: 6px; }
+.chat-input { flex: 1; padding: 7px 10px; font-size: 0.8rem; }
+.chat-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #EF4444;
+  box-shadow: 0 0 8px #EF4444;
+}
+
+.arena-bar {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 12px;
+  z-index: 36;
+  max-width: calc(100vw - 24px);
+}
+.puzzle-meta {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--gold);
+  padding: 0 6px;
+}

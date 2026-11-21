@@ -54,7 +54,10 @@
       <div class="p-color white"></div>
       <div class="p-meta">
         <span class="p-name" id="nameW">BRANCAS</span>
-        <span class="p-caps" id="capsW"></span>
+        <div class="p-caps-row">
+          <span class="p-caps" id="capsW"></span>
+          <span class="p-mat" id="matW" style="display:none"></span>
+        </div>
       </div>
       <div class="p-clock" id="clockW" style="display:none">05:00</div>
     </div>
@@ -63,7 +66,10 @@
       <div class="p-color black"></div>
       <div class="p-meta">
         <span class="p-name" id="nameB">PRETAS</span>
-        <span class="p-caps" id="capsB"></span>
+        <div class="p-caps-row">
+          <span class="p-caps" id="capsB"></span>
+          <span class="p-mat" id="matB" style="display:none"></span>
+        </div>
       </div>
       <div class="p-clock" id="clockB" style="display:none">05:00</div>
     </div>
@@ -77,7 +83,7 @@
     <span class="eval-num" id="evalNum">0.0</span>
   </aside>
 
-  <!-- HISTÓRICO SAN & ANÁLISE -->
+  <!-- HISTÓRICO SAN & ANÁLISE + PGN/FEN -->
   <aside class="history-box panel-glass" id="historyBox">
     <div class="hist-header-row">
       <span class="hist-head">LANCES</span>
@@ -95,13 +101,58 @@
       <button type="button" class="nav-btn" id="btnHistNext" aria-label="Próximo lance" title="Próximo (→)">&gt;</button>
       <button type="button" class="nav-btn" id="btnHistLast" aria-label="Lance atual" title="Atual (End)">&gt;|</button>
     </div>
+    <div class="hist-io-row">
+      <button type="button" class="nav-btn" id="btnCopyPgn" title="Copiar PGN da partida">📋 PGN</button>
+      <button type="button" class="nav-btn" id="btnCopyFen" title="Copiar FEN atual">📋 FEN</button>
+      <button type="button" class="nav-btn" id="btnLoadFen" title="Carregar posição FEN">📥 FEN</button>
+    </div>
   </aside>
+
+  <!-- CHAT AO VIVO DA PARTIDA + REAÇÕES RÁPIDAS -->
+  <aside class="chat-box panel-glass" id="chatBox">
+    <div class="hist-header-row">
+      <span class="hist-head">💬 CHAT DA SALA</span>
+      <button type="button" class="hint-dismiss" id="btnCloseChat" aria-label="Fechar chat">✕</button>
+    </div>
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-empty">Envie uma mensagem ou reação rápida!</div>
+    </div>
+    <div class="chat-emotes" id="chatEmotes">
+      <button type="button" class="emote-btn" data-emote="👏 Boa jogada!">👏</button>
+      <button type="button" class="emote-btn" data-emote="😱 Que lance!">😱</button>
+      <button type="button" class="emote-btn" data-emote="🤔 Pensando...">🤔</button>
+      <button type="button" class="emote-btn" data-emote="🔥 Revanche?">🔥</button>
+      <button type="button" class="emote-btn" data-emote="🤝 Bom jogo!">🤝</button>
+    </div>
+    <form class="chat-form" id="chatForm">
+      <input type="text" id="chatInput" class="txt-input chat-input" maxlength="140" placeholder="Digite aqui…" autocomplete="off">
+      <button type="submit" class="mini-btn prim">Enviar</button>
+    </form>
+  </aside>
+
+  <!-- BARRA FLUTUANTE: ARENA BOT VS BOT -->
+  <div class="arena-bar panel-glass" id="botArenaBar" style="display:none">
+    <button type="button" class="mini-btn prim" id="btnBotPause">⏸ Pausar</button>
+    <button type="button" class="mini-btn" id="btnBotSpeed">⚡ 1x</button>
+    <button type="button" class="mini-btn" id="btnBotOrbit">🎥 Órbita: ON</button>
+    <button type="button" class="mini-btn" id="btnTakeWhite">🎮 Assumir Brancas</button>
+    <button type="button" class="mini-btn" id="btnTakeBlack">🎮 Assumir Pretas</button>
+  </div>
+
+  <!-- BARRA FLUTUANTE: MODO PUZZLES TÁTICOS -->
+  <div class="arena-bar panel-glass" id="puzzleBar" style="display:none">
+    <span class="puzzle-meta" id="puzzleMeta">🧩 Puzzle 1/20</span>
+    <button type="button" class="mini-btn prim" id="btnPuzzleHint">💡 Dica</button>
+    <button type="button" class="mini-btn" id="btnPuzzleNext">⏭ Próximo</button>
+    <button type="button" class="mini-btn" id="btnPuzzleExit">✕ Sair</button>
+  </div>
 
   <!-- AÇÕES INFERIORES -->
   <footer class="hud-actions">
     <button type="button" class="act-btn panel-glass" id="btnHint" style="display:none" title="Dica (H)">💡 <span>DICA</span></button>
     <button type="button" class="act-btn panel-glass" id="btnUndo" style="display:none">↩ <span>DESFAZER</span></button>
     <button type="button" class="act-btn panel-glass" id="btnHistoryToggle">📜 <span>LANCES</span></button>
+    <button type="button" class="act-btn panel-glass" id="btnChat" style="position:relative">💬 <span>CHAT</span><span class="chat-dot" id="chatUnread" style="display:none"></span></button>
     <button type="button" class="act-btn panel-glass" id="btnDraw" style="display:none">🤝 <span>EMPATE</span></button>
     <button type="button" class="act-btn panel-glass warn" id="btnResign" style="display:none">🏳 <span>DESISTIR</span></button>
     <button type="button" class="act-btn panel-glass" id="btnNewMenu">☰ <span>MENU</span></button>
@@ -155,14 +206,15 @@
             <h1 class="hero-title">Xadrez Royale</h1>
           </div>
         </div>
-        <p class="hero-sub">Escultura Staunton 3D, Stockfish 19 NNUE, abertura em tempo real e modo online.</p>
+        <p class="hero-sub">Skins 3D (Staunton, Cristal & Cyber), Stockfish 19, Bot vs Bot, Puzzles e Online.</p>
       </div>
 
       <button type="button" class="btn full" id="btnResumeGame" style="display:none">▶ RETOMAR PARTIDA</button>
 
       <div class="seg-group" id="segMode">
-        <button type="button" class="seg active" data-val="pve">Contra Máquina</button>
+        <button type="button" class="seg active" data-val="pve">Contra IA</button>
         <button type="button" class="seg" data-val="pvp">2 Jogadores</button>
+        <button type="button" class="seg" data-val="botvsbot">🤖×🤖 Bots</button>
         <button type="button" class="seg" data-val="online">Online</button>
       </div>
 
@@ -198,6 +250,30 @@
         </div>
 
         <button type="button" class="btn prim full" id="btnStartLocal">INICIAR PARTIDA</button>
+        <button type="button" class="btn full" id="btnStartPuzzles" style="margin-top:8px">🧩 PUZZLES TÁTICOS (<span id="puzzleSolvedCount">0</span>/20)</button>
+      </div>
+
+      <!-- OPÇÕES ARENA BOT VS BOT -->
+      <div id="botArenaOpts" style="display:none">
+        <div class="field-row">
+          <label>Bot das Brancas</label>
+          <div class="seg-group compact" id="segBotW">
+            <button type="button" class="seg" data-val="sofia">🌱 Sofia</button>
+            <button type="button" class="seg active" data-val="viktor">⚔️ Viktor</button>
+            <button type="button" class="seg" data-val="helena">🏛️ Helena</button>
+            <button type="button" class="seg" data-val="stockfish">🤖 Stockfish</button>
+          </div>
+        </div>
+        <div class="field-row">
+          <label>Bot das Pretas</label>
+          <div class="seg-group compact" id="segBotB">
+            <button type="button" class="seg" data-val="sofia">🌱 Sofia</button>
+            <button type="button" class="seg" data-val="viktor">⚔️ Viktor</button>
+            <button type="button" class="seg active" data-val="helena">🏛️ Helena</button>
+            <button type="button" class="seg" data-val="stockfish">🤖 Stockfish</button>
+          </div>
+        </div>
+        <button type="button" class="btn prim full" id="btnStartBotArena">🤖 INICIAR ARENA BOT × BOT</button>
       </div>
 
       <!-- OPÇÕES ONLINE -->
@@ -264,15 +340,46 @@
   <!-- CONFIGURAÇÕES DE APARÊNCIA -->
   <div class="overlay hide" id="settingsOverlay">
     <div class="modal panel-glass">
-      <div class="modal-eyebrow">ESTÚDIO 3D</div>
-      <h2 class="modal-title">Tabuleiro & Qualidade</h2>
+      <div class="modal-eyebrow">ESTÚDIO 3D & RÁDIO</div>
+      <h2 class="modal-title">Skins, Áudio & Qualidade</h2>
       <div class="field-row">
         <label>Tabuleiro</label>
         <div class="swatch-row" id="boardSwatches"></div>
       </div>
       <div class="field-row">
-        <label>Peças</label>
+        <label>Skin 3D das Peças (Modelo & Shader)</label>
+        <div class="seg-group compact" id="segPieceStyle">
+          <button type="button" class="seg active" data-val="staunton">♔ Staunton</button>
+          <button type="button" class="seg" data-val="crystal">💎 Cristal</button>
+          <button type="button" class="seg" data-val="cyber">🌆 Cyber Neon</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>Cores das Peças</label>
         <div class="swatch-row" id="pieceSwatches"></div>
+      </div>
+      <div class="field-row">
+        <label>Música Ambiente</label>
+        <div class="seg-group compact" id="segMusic">
+          <button type="button" class="seg active" data-val="1">Ligada</button>
+          <button type="button" class="seg" data-val="0">Desligada</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>Estação Musical (Rádio Royale)</label>
+        <div class="seg-group compact" id="segMusicStyle">
+          <button type="button" class="seg active" data-val="imperial">🏛️ Imperial</button>
+          <button type="button" class="seg" data-val="vice">🌴 Vice 80s</button>
+          <button type="button" class="seg" data-val="lofi">☕ Lo-Fi</button>
+          <button type="button" class="seg" data-val="tension">⚔️ Tensão</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <label>Narrador de Voz (Português)</label>
+        <div class="seg-group compact" id="segNarrator">
+          <button type="button" class="seg active" data-val="0">Desligado</button>
+          <button type="button" class="seg" data-val="1">🎙️ Ativo</button>
+        </div>
       </div>
       <div class="field-row">
         <label>Qualidade Gráfica</label>
@@ -281,13 +388,6 @@
           <button type="button" class="seg" data-val="high">Alta</button>
           <button type="button" class="seg" data-val="medium">Média</button>
           <button type="button" class="seg" data-val="low">Leve</button>
-        </div>
-      </div>
-      <div class="field-row">
-        <label>Música Ambiente</label>
-        <div class="seg-group compact" id="segMusic">
-          <button type="button" class="seg active" data-val="1">Ligada</button>
-          <button type="button" class="seg" data-val="0">Desligada</button>
         </div>
       </div>
       <div class="field-row">

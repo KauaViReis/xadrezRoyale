@@ -529,6 +529,137 @@ export function createChessGeometries(tier = 'high') {
   return { p: pawn, r: rook, n: knight, b: bishop, q: queen, k: king };
 }
 
+export const PIECE_STYLES = [
+  { id: 'staunton', name: '♔ Staunton' },
+  { id: 'crystal',  name: '💎 Cristal' },
+  { id: 'cyber',    name: '🌆 Cyber Neon' }
+];
+
+/* Geometrias 3D Lapidadas (Cristal / Bauhaus Geométrico) */
+function createCrystalGeometries() {
+  const facet = (geo, maxH) => {
+    const out = mergeGeos(Array.isArray(geo) ? geo : [geo]);
+    applyHeightV(out, 0, maxH);
+    return out;
+  };
+  const hexBase = (rad = 0.25, h = 0.14) => {
+    const g = new THREE.CylinderGeometry(rad * 0.88, rad, h, 6);
+    g.translate(0, h / 2, 0);
+    return g;
+  };
+
+  // Peão: base hexagonal + pirâmide invertida + diamante no topo
+  const pBody = new THREE.CylinderGeometry(0.08, 0.19, 0.34, 6); pBody.translate(0, 0.30, 0);
+  const pHead = new THREE.OctahedronGeometry(0.135, 0); pHead.translate(0, 0.56, 0);
+  const pawn = facet([hexBase(0.22, 0.13), pBody, pHead], 0.70);
+
+  // Torre: monolito prismático octogonal com 4 pilares angulares
+  const rCol = new THREE.CylinderGeometry(0.18, 0.21, 0.50, 8); rCol.translate(0, 0.39, 0);
+  const rTop = new THREE.CylinderGeometry(0.23, 0.19, 0.12, 8); rTop.translate(0, 0.69, 0);
+  const rParts = [hexBase(0.25, 0.14), rCol, rTop];
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const pil = new THREE.BoxGeometry(0.10, 0.11, 0.10);
+    pil.rotateY(a);
+    pil.translate(Math.cos(a) * 0.155, 0.80, Math.sin(a) * 0.155);
+    rParts.push(pil);
+  }
+  const rook = facet(rParts, 0.88);
+
+  // Cavalo: escultura geométrica angular em prisma inclinado
+  const nNeck = new THREE.CylinderGeometry(0.10, 0.19, 0.42, 6);
+  nNeck.rotateX(0.24); nNeck.translate(0, 0.36, -0.02);
+  const nHead = new THREE.ConeGeometry(0.14, 0.36, 5);
+  nHead.rotateX(Math.PI / 2.2); nHead.translate(0, 0.64, 0.12);
+  const nCrest = new THREE.OctahedronGeometry(0.12, 0);
+  nCrest.scale(0.65, 1.4, 1.0); nCrest.translate(0, 0.72, -0.04);
+  const knight = facet([hexBase(0.25, 0.14), nNeck, nHead, nCrest], 0.90);
+
+  // Bispo: obelisco afilado com cristal suspenso
+  const bCol = new THREE.CylinderGeometry(0.09, 0.19, 0.50, 6); bCol.translate(0, 0.39, 0);
+  const bMitre = new THREE.OctahedronGeometry(0.16, 0);
+  bMitre.scale(0.95, 1.55, 0.95); bMitre.translate(0, 0.76, 0);
+  const bishop = facet([hexBase(0.24, 0.14), bCol, bMitre], 1.02);
+
+  // Dama: torre de cristal + coroa hexagonal + estrela octaédrica
+  const qCol = new THREE.CylinderGeometry(0.11, 0.21, 0.58, 6); qCol.translate(0, 0.43, 0);
+  const qCrown = new THREE.CylinderGeometry(0.23, 0.12, 0.22, 6); qCrown.translate(0, 0.82, 0);
+  const qGem = new THREE.OctahedronGeometry(0.13, 0); qGem.translate(0, 1.04, 0);
+  const queen = facet([hexBase(0.27, 0.14), qCol, qCrown, qGem], 1.18);
+
+  // Rei: obelisco imperial + prisma duplo + cruz geométrica
+  const kCol = new THREE.CylinderGeometry(0.12, 0.22, 0.64, 6); kCol.translate(0, 0.46, 0);
+  const kCrown = new THREE.CylinderGeometry(0.24, 0.14, 0.24, 6); kCrown.translate(0, 0.89, 0);
+  const kV = new THREE.BoxGeometry(0.06, 0.24, 0.06); kV.translate(0, 1.13, 0);
+  const kH = new THREE.BoxGeometry(0.19, 0.06, 0.06); kH.translate(0, 1.15, 0);
+  const king = facet([hexBase(0.28, 0.15), kCol, kCrown, kV, kH], 1.28);
+
+  return { p: pawn, r: rook, n: knight, b: bishop, q: queen, k: king };
+}
+
+/* Geometrias 3D Cyber Neon (Holograma Futurista com Anéis) */
+function createCyberGeometries(tier = 'high') {
+  const segs = tier === 'low' ? 12 : 20;
+  const pack = (parts, maxH) => {
+    const out = mergeGeos(parts);
+    applyHeightV(out, 0, maxH);
+    return out;
+  };
+  const discBase = (rad = 0.26) => {
+    const b1 = new THREE.CylinderGeometry(rad, rad * 1.06, 0.08, segs); b1.translate(0, 0.04, 0);
+    const ring = new THREE.TorusGeometry(rad * 0.85, 0.025, 8, segs);
+    ring.rotateX(Math.PI / 2); ring.translate(0, 0.12, 0);
+    return [b1, ring];
+  };
+
+  // Peão Cyber
+  const pCore = new THREE.CylinderGeometry(0.07, 0.15, 0.34, segs); pCore.translate(0, 0.30, 0);
+  const pOrb = new THREE.IcosahedronGeometry(0.13, 1); pOrb.translate(0, 0.56, 0);
+  const pawn = pack([...discBase(0.22), pCore, pOrb], 0.70);
+
+  // Torre Cyber (núcleo + 2 anéis flutuantes)
+  const rCore = new THREE.CylinderGeometry(0.15, 0.18, 0.56, segs); rCore.translate(0, 0.40, 0);
+  const rHalo1 = new THREE.TorusGeometry(0.21, 0.032, 8, segs); rHalo1.rotateX(Math.PI / 2); rHalo1.translate(0, 0.62, 0);
+  const rHalo2 = new THREE.TorusGeometry(0.22, 0.036, 8, segs); rHalo2.rotateX(Math.PI / 2); rHalo2.translate(0, 0.76, 0);
+  const rook = pack([...discBase(0.25), rCore, rHalo1, rHalo2], 0.85);
+
+  // Cavalo Cyber (visor angular futurista)
+  const nStem = new THREE.CylinderGeometry(0.11, 0.16, 0.38, segs); nStem.translate(0, 0.31, 0);
+  const nVisor = new THREE.BoxGeometry(0.18, 0.24, 0.34);
+  nVisor.rotateX(0.3); nVisor.translate(0, 0.62, 0.06);
+  const nFin = new THREE.BoxGeometry(0.05, 0.34, 0.12); nFin.translate(0, 0.66, -0.10);
+  const knight = pack([...discBase(0.25), nStem, nVisor, nFin], 0.90);
+
+  // Bispo Cyber (haste + anel orbital diagonal + núcleo)
+  const bStem = new THREE.CylinderGeometry(0.08, 0.16, 0.56, segs); bStem.translate(0, 0.40, 0);
+  const bRing = new THREE.TorusGeometry(0.16, 0.026, 8, segs);
+  bRing.rotateX(0.7); bRing.translate(0, 0.78, 0);
+  const bCore = new THREE.OctahedronGeometry(0.10, 0); bCore.translate(0, 0.78, 0);
+  const bishop = pack([...discBase(0.24), bStem, bRing, bCore], 0.98);
+
+  // Dama Cyber (torre holográfica + duplo halo orbital)
+  const qStem = new THREE.CylinderGeometry(0.10, 0.18, 0.68, segs); qStem.translate(0, 0.46, 0);
+  const qRing1 = new THREE.TorusGeometry(0.21, 0.025, 8, segs); qRing1.rotateX(Math.PI / 2); qRing1.translate(0, 0.88, 0);
+  const qRing2 = new THREE.TorusGeometry(0.17, 0.022, 8, segs); qRing2.rotateX(Math.PI / 3); qRing2.translate(0, 0.96, 0);
+  const qOrb = new THREE.IcosahedronGeometry(0.10, 1); qOrb.translate(0, 0.96, 0);
+  const queen = pack([...discBase(0.27), qStem, qRing1, qRing2, qOrb], 1.15);
+
+  // Rei Cyber (obelisco + anel imperial + cruz neon)
+  const kStem = new THREE.CylinderGeometry(0.11, 0.19, 0.74, segs); kStem.translate(0, 0.50, 0);
+  const kRing = new THREE.TorusGeometry(0.22, 0.028, 8, segs); kRing.rotateX(Math.PI / 2); kRing.translate(0, 0.92, 0);
+  const kV = new THREE.BoxGeometry(0.06, 0.26, 0.06); kV.translate(0, 1.12, 0);
+  const kH = new THREE.BoxGeometry(0.22, 0.06, 0.06); kH.translate(0, 1.14, 0);
+  const king = pack([...discBase(0.28), kStem, kRing, kV, kH], 1.28);
+
+  return { p: pawn, r: rook, n: knight, b: bishop, q: queen, k: king };
+}
+
+export function createChessGeometriesByStyle(tier = 'high', style = 'staunton') {
+  if (style === 'crystal') return createCrystalGeometries();
+  if (style === 'cyber') return createCyberGeometries(normalizeTier(tier));
+  return createChessGeometries(tier);
+}
+
 function makePieceCanvasTex(size, colorSpace, anisotropy, fn) {
   const cvs = document.createElement('canvas');
   cvs.width = size;
@@ -629,11 +760,37 @@ export function getPieceTextures(texKind = 'wood', tier = 'high') {
   return set;
 }
 
-export function newPieceMaterial(colorHex, theme, tier = 'high') {
+export function newPieceMaterial(colorHex, theme, tier = 'high', style = 'staunton', color = 'w') {
   const t = normalizeTier(tier);
   const isMetal = !!theme?.metal;
   const texKind = theme?.tex || (isMetal ? 'metal' : 'wood');
   const isMatte = texKind === 'matte';
+
+  if (style === 'crystal') {
+    return new THREE.MeshPhysicalMaterial({
+      color: colorHex,
+      flatShading: true,
+      roughness: 0.08,
+      metalness: 0.22,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.06,
+      transparent: true,
+      opacity: 0.90
+    });
+  }
+
+  if (style === 'cyber') {
+    const neonHex = color === 'w' ? 0x00F0FF : 0xFF2E93;
+    return new THREE.MeshStandardMaterial({
+      color: colorHex,
+      emissive: new THREE.Color(neonHex),
+      emissiveIntensity: 0.45,
+      roughness: 0.18,
+      metalness: 0.80,
+      transparent: true,
+      opacity: 0.92
+    });
+  }
 
   if (t === 'low') {
     return new THREE.MeshStandardMaterial({
@@ -681,11 +838,11 @@ export function newPieceMaterial(colorHex, theme, tier = 'high') {
   });
 }
 
-export function createPieceMesh(type, color, geos, theme, tier = 'high') {
+export function createPieceMesh(type, color, geos, theme, tier = 'high', style = 'staunton') {
   const t = normalizeTier(tier);
   const resolvedTheme = theme || PIECE_THEMES[0];
   const colorHex = color === 'w' ? resolvedTheme.w : resolvedTheme.b;
-  const mat = newPieceMaterial(colorHex, resolvedTheme, t);
+  const mat = newPieceMaterial(colorHex, resolvedTheme, t, style, color);
   const mesh = new THREE.Mesh(geos[type], mat);
   mesh.castShadow = t !== 'low';
   mesh.receiveShadow = t !== 'low';
@@ -693,8 +850,8 @@ export function createPieceMesh(type, color, geos, theme, tier = 'high') {
   return mesh;
 }
 
-export function makeChessPiece(scene, geos, type, color, r, c, theme, tier = 'high') {
-  const mesh = createPieceMesh(type, color, geos, theme, tier);
+export function makeChessPiece(scene, geos, type, color, r, c, theme, tier = 'high', style = 'staunton') {
+  const mesh = createPieceMesh(type, color, geos, theme, tier, style);
   const pos = worldPos(r, c);
   mesh.position.set(pos.x, 0, pos.z);
   scene.add(mesh);
@@ -713,6 +870,7 @@ function resolveMeshList(ctx) {
 
 export function applyPieceTheme(theme, tier = 'high', ctx = {}) {
   const t = normalizeTier(tier);
+  const style = ctx.style || 'staunton';
   const resolvedTheme = typeof theme === 'number'
     ? (PIECE_THEMES[theme] || PIECE_THEMES[0])
     : (theme || PIECE_THEMES[0]);
@@ -723,9 +881,9 @@ export function applyPieceTheme(theme, tier = 'high', ctx = {}) {
     const color = pieceInfo?.color || 'w';
     const colorHex = color === 'w' ? resolvedTheme.w : resolvedTheme.b;
     const oldMat = mesh.material;
-    const nextMat = newPieceMaterial(colorHex, resolvedTheme, t);
+    const nextMat = newPieceMaterial(colorHex, resolvedTheme, t, style, color);
 
-    if (oldMat && oldMat.emissiveIntensity > 0 && nextMat.emissive) {
+    if (style === 'staunton' && oldMat && oldMat.emissiveIntensity > 0 && nextMat.emissive) {
       nextMat.emissive.copy(oldMat.emissive);
       nextMat.emissiveIntensity = oldMat.emissiveIntensity;
     }
@@ -737,11 +895,12 @@ export function applyPieceTheme(theme, tier = 'high', ctx = {}) {
 
 export function setPieceQuality(tier, ctx = {}) {
   const t = normalizeTier(tier);
+  const style = ctx.style || 'staunton';
   const { all, captured } = resolveMeshList(ctx);
   const theme = ctx.theme || ctx.pieceTheme || PIECE_THEMES[0];
 
   if (all.length > 0) {
-    applyPieceTheme(theme, t, ctx);
+    applyPieceTheme(theme, t, { ...ctx, style });
   }
 
   for (const mesh of all) {
@@ -753,7 +912,7 @@ export function setPieceQuality(tier, ctx = {}) {
   }
 
   if (ctx.geos) {
-    const newGeos = createChessGeometries(t);
+    const newGeos = createChessGeometriesByStyle(t, style);
     for (const mesh of all) {
       const pType = mesh.userData?.piece?.type;
       if (pType && newGeos[pType]) mesh.geometry = newGeos[pType];

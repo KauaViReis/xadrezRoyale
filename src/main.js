@@ -18,15 +18,17 @@ import { applyQualityTier } from './engine/quality.js';
 import { createScene } from './engine/scene.js';
 import { createBoard, applyBoardMaterialTextures, worldPos } from './engine/board3d.js';
 import {
-  createChessGeometries, makeChessPiece, applyPieceTheme as applyPieceTheme3D,
-  animatePieceMove, animateKingTopple, animatePiecesIntro
+  createChessGeometriesByStyle, makeChessPiece, applyPieceTheme as applyPieceTheme3D,
+  setPieceQuality, animatePieceMove, animateKingTopple, animatePiecesIntro
 } from './engine/pieces3d.js';
 import { FXManager } from './engine/fx.js';
 import { CameraController } from './engine/camera.js';
 import { OnlineManager, isFirebaseConfigured } from './online/firebase.js';
 import { getStockfishHint } from './workers/stockfish-hint.js';
 import { detectOpening } from './core/openings.js';
-import { BOT_PROFILES, getLeague, ACHIEVEMENTS, evaluateMatchAchievements } from './core/meta.js';
+import { BOT_PROFILES, getBotById, getLeague, ACHIEVEMENTS, evaluateMatchAchievements } from './core/meta.js';
+import { TACTICAL_PUZZLES, computeMaterialBalance } from './core/puzzles.js';
+import { VoiceNarrator } from './core/narrator.js';
 
 const $ = sel => document.querySelector(sel);
 
@@ -53,6 +55,7 @@ let reviewPly = null;         /* null = ao vivo, 0..N = inspecionando lance */
 let plyAnalyses = [];         /* [{ classification, evalCp, mateIn, cpLoss }] */
 let boardThemeIdx = prefs.boardTheme ?? 0;
 let pieceThemeIdx = prefs.pieceTheme ?? 0;
+let pieceStyle = prefs.pieceStyle || 'staunton';
 let evalVisible = !!prefs.evalVisible;
 let nick = prefs.nick || 'JOGADOR';
 let pendingPromo = null;
@@ -62,15 +65,35 @@ let capturedMeshes = [];
 let capTrayCount = { w: 0, b: 0 };
 let capturedSymbols = { w: '', b: '' };
 
+/* Estado da Arena Bot vs Bot */
+let botWhiteId = 'viktor';
+let botBlackId = 'helena';
+let botArenaPaused = false;
+let botArenaSpeed = 1;       /* 1 = normal (650ms), 2 = rápido (220ms), 3 = turbo (40ms) */
+let botOrbitEnabled = true;
+
+/* Estado de Puzzles Táticos */
+const PUZZLE_KEY = 'xadrezRoyale.puzzles';
+const loadSolvedPuzzles = () => {
+  try { return new Set(JSON.parse(localStorage.getItem(PUZZLE_KEY)) || []); }
+  catch { return new Set(); }
+};
+const solvedPuzzles = loadSolvedPuzzles();
+let puzzleIdx = 0;
+let puzzleStep = 0;
+
 function savePrefs() {
   try {
     localStorage.setItem(PREFS_KEY, JSON.stringify({
       boardTheme: boardThemeIdx,
       pieceTheme: pieceThemeIdx,
+      pieceStyle,
       aiDepth,
       evalVisible,
       muted: audio.muted,
       music: audio.musicEnabled,
+      musicStyle: audio.musicStyle,
+      narrator: narrator.enabled,
       nick
     }));
   } catch { /* noop */ }
@@ -82,7 +105,7 @@ const { scene, camera, renderer, materials, lights, qualityTier: initTier, resiz
 let qualityTier = initTier;
 const boardCtx = createBoard(scene, materials, qualityTier);
 const { squares } = boardCtx;
-let geos = createChessGeometries(qualityTier);
+let geos = createChessGeometriesByStyle(qualityTier, pieceStyle);
 const fx = new FXManager(scene);
 fx.setQuality(qualityTier);
 fx.setHintAssets(geos, PIECE_THEMES[pieceThemeIdx]);
@@ -90,6 +113,9 @@ const cam = new CameraController(canvas, camera);
 const audio = new AudioManager();
 audio.muted = !!prefs.muted;
 audio.musicEnabled = prefs.music !== false;
+audio.musicStyle = prefs.musicStyle || 'imperial';
+const narrator = new VoiceNarrator();
+narrator.setEnabled(!!prefs.narrator);
 $('#btnSound').textContent = audio.muted ? '🔇' : '🔊';
 if (audio.musicEnabled && !audio.muted) {
   const startAmbientOnce = () => {
@@ -130,13 +156,14 @@ const online = new OnlineManager();
 let onlineInitPromise = null;
 
 function canUseHint() {
-  if (!gameActive || reviewPly !== null || online.game?.spectate) return false;
+  if (!gameActive || reviewPly !== null || online.game?.spectate || mode === 'botvsbot' || mode === 'puzzle') return false;
   if (mode !== 'online') return true;
   return online.isVipDev();
 }
 
 function canShowEval() {
   if (plyAnalyses.length > 0 && reviewPly !== null) return true;
+  if (mode === 'botvsbot') return true;
   if (mode === 'online' && online.game?.spectate) return true;
   if (mode === 'online') return evalVisible && online.isVipDev();
   return evalVisible;
@@ -159,7 +186,7 @@ function hideHint() {
   hb.style.display = 'none';
 }
 
-/* ============ TEMAS ============ */
+/* ============ TEMAS & SKINS 3D ============ */
 function applyBoardTheme(i) {
   boardThemeIdx = i;
   const t = BOARD_THEMES[i] || BOARD_THEMES[0];
@@ -173,9 +200,17 @@ function applyBoardTheme(i) {
 function applyPieceTheme(i) {
   pieceThemeIdx = i;
   const th = PIECE_THEMES[i] || PIECE_THEMES[0];
-  applyPieceTheme3D(th, qualityTier, { pieceMeshes, capturedMeshes, geos });
+  applyPieceTheme3D(th, qualityTier, { pieceMeshes, capturedMeshes, geos, style: pieceStyle });
   fx.setHintAssets(geos, th);
   document.querySelectorAll('#pieceSwatches .swatch-btn').forEach((b, idx) => b.classList.toggle('active', idx === i));
+  savePrefs();
+}
+
+function applyPieceStyle(nextStyle) {
+  pieceStyle = nextStyle || 'staunton';
+  const th = PIECE_THEMES[pieceThemeIdx] || PIECE_THEMES[0];
+  setPieceQuality(qualityTier, { pieceMeshes, capturedMeshes, geos, theme: th, style: pieceStyle });
+  fx.setHintAssets(geos, th);
   savePrefs();
 }
 
@@ -203,7 +238,7 @@ function addCapturedToken(type, color) {
 
   if (qualityTier === 'low') return;
   const th = PIECE_THEMES[pieceThemeIdx];
-  const tok = makeChessPiece(scene, geos, type, color, 0, 0, th, qualityTier);
+  const tok = makeChessPiece(scene, geos, type, color, 0, 0, th, qualityTier, pieceStyle);
   const side = color === 'w' ? -1 : 1;
   const n = capTrayCount[color]++;
   const col = Math.floor(n / 8);
@@ -227,7 +262,7 @@ function rebuildBoardPieces(boardMatrix = chess.board()) {
     for (let c = 0; c < 8; c++) {
       const cell = boardMatrix[r][c];
       if (!cell) continue;
-      const p = makeChessPiece(scene, geos, cell.type, cell.color, r, c, th, qualityTier);
+      const p = makeChessPiece(scene, geos, cell.type, cell.color, r, c, th, qualityTier, pieceStyle);
       grid[r][c] = p;
       pieceMeshes.push(p);
     }
@@ -235,10 +270,25 @@ function rebuildBoardPieces(boardMatrix = chess.board()) {
   capturedMeshes = prevCaptured;
 }
 
+function updateMaterialUI(viewChess = chess) {
+  const bal = computeMaterialBalance(viewChess);
+  const elW = $('#matW');
+  const elB = $('#matB');
+  if (elW) {
+    elW.style.display = bal.diffW > 0 ? 'inline-block' : 'none';
+    if (bal.diffW > 0) elW.textContent = `+${bal.diffW}`;
+  }
+  if (elB) {
+    elB.style.display = bal.diffB > 0 ? 'inline-block' : 'none';
+    if (bal.diffB > 0) elB.textContent = `+${bal.diffB}`;
+  }
+}
+
 /* ============ UI UPDATES ============ */
 function updateTurnUI(viewChess = chess) {
   const turn = viewChess.turn();
   const isReview = reviewPly !== null;
+  updateMaterialUI(viewChess);
   $('#turnDot').classList.toggle('black', turn === 'b');
   $('#turnTxt').textContent = isReview
     ? `REVISÃO · LANCE ${reviewPly}/${chess.history().length}`
@@ -538,6 +588,7 @@ async function executeMove(moveInput, isRemote = false) {
   }
 
   if (chess.inCheck()) audio.check();
+  narrator.announceMove(move, { isCheck: chess.inCheck(), isCheckmate: chess.isCheckmate() });
   fx.setLastMove(fromRC.r, fromRC.c, toRC.r, toRC.c);
   renderHistory();
   updateTurnUI();
@@ -553,6 +604,50 @@ async function executeMove(moveInput, isRemote = false) {
   }
 
   busy = false;
+
+  /* Validação do Modo Puzzles Táticos */
+  if (mode === 'puzzle' && !isRemote) {
+    const puz = TACTICAL_PUZZLES[puzzleIdx];
+    const expectedUci = puz?.moves?.[puzzleStep];
+    const playedUci = `${move.from}${move.to}${move.promotion || ''}`;
+    if (expectedUci && playedUci !== expectedUci) {
+      audio.error();
+      toast('❌ Lance incorreto! Tente novamente.');
+      setTimeout(() => {
+        if (mode !== 'puzzle') return;
+        chess.undo();
+        rebuildBoardPieces();
+        renderHistory();
+        updateTurnUI();
+      }, 420);
+      return true;
+    }
+    puzzleStep++;
+    if (puzzleStep >= puz.moves.length) {
+      audio.win();
+      solvedPuzzles.add(puz.id);
+      try { localStorage.setItem(PUZZLE_KEY, JSON.stringify([...solvedPuzzles])); } catch { /* noop */ }
+      updatePuzzleSolvedUI();
+      toast(`✅ Puzzle "${puz.title}" resolvido! (${solvedPuzzles.size}/${TACTICAL_PUZZLES.length})`);
+      narrator.speak(`Excelente! Puzzle ${puz.title} resolvido!`);
+      setTimeout(() => {
+        if (mode === 'puzzle') startPuzzle((puzzleIdx + 1) % TACTICAL_PUZZLES.length);
+      }, 1500);
+      return true;
+    }
+    /* Resposta automática do oponente no puzzle */
+    const replyUci = puz.moves[puzzleStep];
+    puzzleStep++;
+    setTimeout(() => {
+      if (mode !== 'puzzle' || !gameActive) return;
+      executeMove({
+        from: replyUci.slice(0, 2),
+        to: replyUci.slice(2, 4),
+        promotion: replyUci[4] || undefined
+      }, true);
+    }, 360);
+    return true;
+  }
 
   if (chess.isGameOver()) {
     clearPremove();
@@ -577,6 +672,8 @@ async function executeMove(moveInput, isRemote = false) {
     cam.flipBoard();
   } else if (mode === 'pve' && chess.turn() !== playerSide) {
     runAIMove();
+  } else if (mode === 'botvsbot') {
+    scheduleBotArenaTurn();
   }
   return true;
 }
@@ -610,19 +707,32 @@ function currentBotProfile() {
   return BOT_PROFILES[Math.max(0, Math.min(BOT_PROFILES.length - 1, (aiDepth || 2) - 1))] || BOT_PROFILES[1];
 }
 
-async function runAIMove() {
+let botArenaTimer = null;
+function scheduleBotArenaTurn() {
+  clearTimeout(botArenaTimer);
+  if (mode !== 'botvsbot' || !gameActive || botArenaPaused || chess.isGameOver()) return;
+  const delay = botArenaSpeed === 3 ? 40 : (botArenaSpeed === 2 ? 220 : 620);
+  botArenaTimer = setTimeout(() => {
+    if (mode !== 'botvsbot' || !gameActive || botArenaPaused || chess.isGameOver()) return;
+    const activeBot = getBotById(chess.turn() === 'w' ? botWhiteId : botBlackId);
+    runAIMove(activeBot);
+  }, delay);
+}
+
+async function runAIMove(overrideBot = null) {
   if (!gameActive || chess.isGameOver()) return;
-  const bot = currentBotProfile();
+  const bot = overrideBot || currentBotProfile();
   $('#turnTxt').textContent = `${bot.name.toUpperCase()} PENSANDO…`;
 
   let res = null;
   if (bot.style === 'stockfish') {
-    res = await getStockfishHint(chess.fen(), { depth: 12, movetime: 750 });
+    res = await getStockfishHint(chess.fen(), { depth: 12, movetime: mode === 'botvsbot' && botArenaSpeed === 3 ? 250 : 750 });
   }
   if (!res || !res.ok || !res.move) {
     res = await askWorker('bestMove', { fen: chess.fen(), depth: Math.min(3, bot.depth || aiDepth) });
   }
   if (!gameActive || !res.ok || !res.move) return;
+  if (mode === 'botvsbot' && botArenaPaused) return;
   await executeMove(res.move);
 }
 
@@ -761,7 +871,7 @@ const ray = new THREE.Raycaster();
 const ptr = new THREE.Vector2();
 
 cam.onTap = async (cx, cy) => {
-  if (cam.arrowMode || online.game?.spectate) return;
+  if (cam.arrowMode || online.game?.spectate || mode === 'botvsbot') return;
   fx.clearManualAnnotations();
   if (!gameActive || busy || reviewPly !== null) return;
   if (mode === 'pve' && chess.turn() !== playerSide) return;
@@ -836,7 +946,7 @@ cam.onTap = async (cx, cy) => {
 let hoveredPiece = null;
 if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
   canvas.addEventListener('pointermove', e => {
-    if (!gameActive || busy || cam.dragging || cam.arrowMode || reviewPly !== null || qualityTier === 'low') {
+    if (!gameActive || busy || cam.dragging || cam.arrowMode || reviewPly !== null || qualityTier === 'low' || mode === 'botvsbot') {
       if (hoveredPiece) {
         const sq = rcToSquare(hoveredPiece.r, hoveredPiece.c);
         if (sq !== selectedSq) hoveredPiece.mesh.position.y = 0;
@@ -862,10 +972,30 @@ if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
   });
 }
 
+function updatePuzzleSolvedUI() {
+  const el = $('#puzzleSolvedCount');
+  if (el) el.textContent = String(solvedPuzzles.size);
+}
+updatePuzzleSolvedUI();
+
+function startPuzzle(idx = 0) {
+  puzzleIdx = ((idx % TACTICAL_PUZZLES.length) + TACTICAL_PUZZLES.length) % TACTICAL_PUZZLES.length;
+  puzzleStep = 0;
+  const puz = TACTICAL_PUZZLES[puzzleIdx];
+  startMatch('puzzle', { customFen: puz.fen, puzzle: puz });
+}
+
 /* ============ INICIALIZAÇÃO DE PARTIDA ============ */
 function startMatch(newMode, opts = {}) {
+  clearTimeout(botArenaTimer);
+  botArenaPaused = false;
   mode = newMode;
-  chess.reset();
+  narrator.resetMatch();
+  if (opts.customFen) {
+    chess.load(opts.customFen);
+  } else {
+    chess.reset();
+  }
   reviewPly = null;
   plyAnalyses = [];
   clearPremove();
@@ -876,6 +1006,10 @@ function startMatch(newMode, opts = {}) {
   capturedSymbols = { w: '', b: '' };
   $('#capsW').textContent = '';
   $('#capsB').textContent = '';
+  if ($('#chatMessages')) {
+    $('#chatMessages').innerHTML = '<div class="chat-empty">Envie uma mensagem ou reação rápida!</div>';
+  }
+  if ($('#chatUnread')) $('#chatUnread').style.display = 'none';
 
   if (mode === 'online' && opts.spectate && Array.isArray(opts.moves)) {
     for (const m of opts.moves) {
@@ -886,6 +1020,11 @@ function startMatch(newMode, opts = {}) {
   rebuildBoardPieces();
   renderHistory();
   animatePiecesIntro(pieceMeshes);
+
+  const arenaBar = $('#botArenaBar');
+  const puzzleBar = $('#puzzleBar');
+  if (arenaBar) arenaBar.style.display = mode === 'botvsbot' ? 'flex' : 'none';
+  if (puzzleBar) puzzleBar.style.display = mode === 'puzzle' ? 'flex' : 'none';
 
   if (mode === 'online') {
     myColor = opts.myColor || 'w';
@@ -901,6 +1040,27 @@ function startMatch(newMode, opts = {}) {
     clockW = opts.tc?.base || 300000;
     clockB = opts.tc?.base || 300000;
     cam.resetView(myColor);
+  } else if (mode === 'botvsbot') {
+    const bw = getBotById(botWhiteId);
+    const bb = getBotById(botBlackId);
+    $('#nameW').textContent = `${bw.avatar} ${bw.name.toUpperCase()} (${bw.rating})`;
+    $('#nameB').textContent = `${bb.avatar} ${bb.name.toUpperCase()} (${bb.rating})`;
+    clockW = null;
+    clockB = null;
+    if ($('#btnBotPause')) $('#btnBotPause').textContent = '⏸ Pausar';
+    cam.resetView('w');
+  } else if (mode === 'puzzle') {
+    const puz = opts.puzzle || TACTICAL_PUZZLES[puzzleIdx];
+    const side = chess.turn();
+    myColor = side;
+    $('#nameW').textContent = side === 'w' ? 'VOCÊ (PUZZLE)' : 'OPONENTE';
+    $('#nameB').textContent = side === 'b' ? 'VOCÊ (PUZZLE)' : 'OPONENTE';
+    if ($('#puzzleMeta')) {
+      $('#puzzleMeta').textContent = `🧩 #${puzzleIdx + 1}/${TACTICAL_PUZZLES.length} · ${puz.title} (${puz.theme} · ${puz.rating})`;
+    }
+    clockW = null;
+    clockB = null;
+    cam.resetView(side);
   } else {
     myColor = playerSide;
     const bot = currentBotProfile();
@@ -922,8 +1082,10 @@ function startMatch(newMode, opts = {}) {
   updateTurnUI();
   refreshEval();
 
-  if (mode === 'pve' && playerSide === 'b') {
+  if (mode === 'pve' && chess.turn() !== playerSide) {
     runAIMove();
+  } else if (mode === 'botvsbot') {
+    scheduleBotArenaTurn();
   }
 }
 
@@ -1332,7 +1494,7 @@ function setupChallengeListener() {
     activeChallengeOffer = ch;
     const bar = $('#challengeBar');
     if (!bar) return;
-    $('#challengeBarTxt').textContent = `⚔️ ${ch.fromName} (${ch.fromRating}) desafiou você (${ch.tc?.label || '5+0'})!`;
+    $('#challengeTxt').textContent = `⚔️ ${ch.fromName} (${ch.fromRating}) desafiou você (${ch.tc?.label || '5+0'})!`;
     bar.style.display = 'flex';
   });
 }
@@ -1609,18 +1771,19 @@ $('#btnProfile').onclick = () => {
   const lg = getLeague(r);
   const games = online.profile?.games || 0;
   const wins = online.profile?.wins || 0;
-  $('#profileLeagueBox').innerHTML = `
-    <div class="league-icon">${lg.icon}</div>
-    <div class="league-info">
-      <strong>${ nick } · Liga ${lg.name}</strong>
-      <small>Rating ${r} Elo · Próxima liga: ${lg.max === Infinity ? 'Nível Máximo!' : `${lg.max + 1} Elo`}</small>
-    </div>
-  `;
-  $('#profileStatsGrid').innerHTML = `
-    <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
-    <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
-    <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
-  `;
+  if ($('#profTitle')) $('#profTitle').textContent = nick;
+  const banner = $('#profLeagueBanner');
+  if (banner) {
+    banner.innerHTML = `${lg.icon} <strong>Liga ${lg.name}</strong> · ${r} Elo · Próxima: ${lg.max === Infinity ? 'Nível Máximo!' : `${lg.max + 1} Elo`}`;
+  }
+  const stats = $('#profStatsGrid');
+  if (stats) {
+    stats.innerHTML = `
+      <div class="stat-box"><strong>${r}</strong><small>Rating Elo</small></div>
+      <div class="stat-box"><strong>${games}</strong><small>Partidas Online</small></div>
+      <div class="stat-box"><strong>${wins}</strong><small>Vitórias Online</small></div>
+    `;
+  }
   $('#achGrid').innerHTML = ACHIEVEMENTS.map(a => {
     const unlocked = unlockedAch.has(a.id);
     return `<div class="ach-card ${unlocked ? 'unlocked' : ''}">
@@ -1672,6 +1835,11 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
   const dt = t - prevT;
   prevT = t;
 
+  if (gameActive && mode === 'botvsbot' && botOrbitEnabled && !cam.dragging) {
+    cam.theta += dt * 0.22;
+    cam.sync();
+  }
+
   if (gameActive && clockW !== null && clockB !== null) {
     const ms = dt * 1000;
     if (chess.turn() === 'w') clockW -= ms; else clockB -= ms;
@@ -1705,7 +1873,7 @@ let fpsFrames = 0, fpsAccum = 0, lowFpsStrikes = 0;
             materials,
             boardTheme: BOARD_THEMES[boardThemeIdx],
             board: boardCtx,
-            pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx] }
+            pieces: { pieceMeshes, capturedMeshes, geos, theme: PIECE_THEMES[pieceThemeIdx], style: pieceStyle }
           });
           toast(qualityTier === 'low' ? 'Modo desempenho ativado' : 'Qualidade ajustada para 60fps');
         }

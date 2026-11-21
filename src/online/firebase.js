@@ -207,6 +207,7 @@ export class OnlineManager {
       white,
       black,
       moves: [],
+      chat: [],
       drawOffer: null,
       winner: null,
       reason: null,
@@ -350,6 +351,7 @@ export class OnlineManager {
   _attachGame(gameId, myColor, opts = {}) {
     this._detachGame();
     this.appliedMoves = 0;
+    this.appliedChat = 0;
     this.rated = false;
     const ref = doc(this.db, 'chess_games', gameId);
     this.game = {
@@ -394,6 +396,15 @@ export class OnlineManager {
         }
       }
 
+      const chat = g.chat || [];
+      while (this.appliedChat < chat.length) {
+        try {
+          const msg = JSON.parse(chat[this.appliedChat]);
+          if (this.onChatMessage) this.onChatMessage(msg, msg.by === this.uid);
+        } catch { /* noop */ }
+        this.appliedChat++;
+      }
+
       if (g.status === 'active' && g.drawOffer && g.drawOffer !== this.uid && !this.game.spectate && this.onDrawOffer) {
         this.onDrawOffer();
       }
@@ -436,6 +447,21 @@ export class OnlineManager {
         if (this.onPresence) this.onPresence(Math.floor((Date.now() - this.game.lastOppSeen) / 1000));
       }, 1000);
     }
+  }
+
+  async sendChat(text, isEmote = false) {
+    if (!this.game || !this.game.ref || !text) return;
+    const clean = String(text).trim().slice(0, 140);
+    if (!clean) return;
+    const payload = JSON.stringify({
+      by: this.uid,
+      name: this.profile?.name || 'JOGADOR',
+      text: clean,
+      isEmote: !!isEmote,
+      spectate: !!this.game.spectate,
+      ts: Date.now()
+    });
+    await updateDoc(this.game.ref, { chat: arrayUnion(payload) }).catch(() => {});
   }
 
   /* Pede ou aceita Revanche Instantânea invertendo as cores */
