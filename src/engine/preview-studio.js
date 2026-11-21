@@ -23,18 +23,18 @@ export class PiecePreviewStudio {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.94;
 
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.72));
-    const key = new THREE.DirectionalLight(0xFFF3DE, 1.9);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.48));
+    const key = new THREE.DirectionalLight(0xFFF3DE, 1.25);
     key.position.set(3, 5, 4);
     this.scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x9AB4D6, 0.85);
+    const rim = new THREE.DirectionalLight(0x9AB4D6, 0.55);
     rim.position.set(-3, 3, -3);
     this.scene.add(rim);
 
-    const warm = new THREE.PointLight(0xC99A3E, 0.9, 8);
+    const warm = new THREE.PointLight(0xC99A3E, 0.55, 8);
     warm.position.set(2, 1.5, -2);
     this.scene.add(warm);
 

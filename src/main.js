@@ -2099,7 +2099,11 @@ $$('#settingsTabs .studio-tab').forEach(btn => {
     $$('#settingsTabs .studio-tab').forEach(b => b.classList.toggle('active', b === btn));
     ['visual', 'audio', 'graphics'].forEach(id => {
       const pane = $(`#stab-${id}`);
-      if (pane) pane.classList.toggle('hide', id !== target);
+      if (pane) {
+        const isActive = id === target;
+        pane.classList.toggle('hide', !isActive);
+        pane.style.display = isActive ? '' : 'none';
+      }
     });
   };
 });
@@ -2704,7 +2708,11 @@ function openUserHub(tab = 'overview') {
   $$('#userHubTabs .studio-tab').forEach(b => b.classList.toggle('active', b.dataset.utab === tab));
   ['overview', 'social', 'ranking'].forEach(k => {
     const pane = $(`#utab-${k}`);
-    if (pane) pane.classList.toggle('hide', k !== tab);
+    if (pane) {
+      const isActive = k === tab;
+      pane.classList.toggle('hide', !isActive);
+      pane.style.display = isActive ? '' : 'none';
+    }
   });
   $('#profileOverlay').classList.remove('hide');
   if (tab === 'social') loadSocialTab();

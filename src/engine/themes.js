@@ -93,8 +93,8 @@ export const BOARD_THEMES = [
 ];
 
 export const PIECE_THEMES = [
-  { id: 'boxwood', name: 'BUXO & ÉBANO', w: 0xF3E8D2, b: 0x25211E, metal: false, tex: 'wood' },
-  { id: 'ivory', name: 'MARFIM & ÔNIX', w: 0xFAF6EE, b: 0x18191C, metal: false, tex: 'ivory' },
+  { id: 'boxwood', name: 'BUXO & ÉBANO', w: 0xE6D7BE, b: 0x221D1A, metal: false, tex: 'wood' },
+  { id: 'ivory', name: 'MARFIM & ÔNIX', w: 0xEAE3D5, b: 0x1A1B1E, metal: false, tex: 'ivory' },
   { id: 'brass', name: 'LATÃO & AÇO', w: 0xD7B265, b: 0x6B747E, metal: true, tex: 'metal' },
   { id: 'accessible', name: 'DALTÔNICO (OURO×AZUL)', w: 0xF2C94C, b: 0x2F80ED, metal: false, tex: 'matte' },
   { id: 'gtavi', name: 'VICE NEON (GTA VI)', w: 0xFFB3D9, b: 0x27D8E8, metal: true, tex: 'metal' }

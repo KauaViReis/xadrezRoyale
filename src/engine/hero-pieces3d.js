@@ -39,16 +39,17 @@ function cachedGeo(key, factory) {
   return g;
 }
 
-function heroMat(hex, metalness = 0.35, roughness = 0.32, emissiveInt = 0) {
+function heroMat(hex, metalness = 0.28, roughness = 0.44, emissiveInt = 0) {
   const key = `${hex}:${metalness}:${roughness}:${emissiveInt}`;
   let m = _matCache.get(key);
   if (!m) {
     m = new THREE.MeshStandardMaterial({
       color: new THREE.Color(hex),
       metalness,
-      roughness,
+      roughness: Math.max(0.32, roughness),
+      envMapIntensity: 0.32,
       emissive: emissiveInt > 0 ? new THREE.Color(hex) : new THREE.Color(0x000000),
-      emissiveIntensity: emissiveInt
+      emissiveIntensity: Math.min(0.45, emissiveInt)
     });
     _matCache.set(key, m);
   }
@@ -270,18 +271,20 @@ function buildHeroGroup(heroId, type, color, mainMat, accentMat, castShadow) {
 
 export function createGroupPieceObject(type, color, style, theme, tier = 'high') {
   const castShadow = tier !== 'low';
-  const mainHex = color === 'w' ? (theme?.w ?? 0xEFECE4) : (theme?.b ?? 0x201D1A);
+  const mainHex = color === 'w' ? (theme?.w ?? 0xE6D7BE) : (theme?.b ?? 0x201D1A);
   const accentHex = color === 'w' ? 0xD4AF37 : 0x9E7B36;
 
   const mainMat = new THREE.MeshStandardMaterial({
     color: mainHex,
-    roughness: 0.28,
-    metalness: theme?.metal ? 0.82 : 0.22
+    roughness: 0.46,
+    metalness: theme?.metal ? 0.72 : 0.12,
+    envMapIntensity: 0.30
   });
   const accentMat = new THREE.MeshStandardMaterial({
     color: accentHex,
-    roughness: 0.22,
-    metalness: 0.82
+    roughness: 0.34,
+    metalness: 0.76,
+    envMapIntensity: 0.38
   });
 
   if (style === 'medieval') {

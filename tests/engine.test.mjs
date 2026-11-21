@@ -502,6 +502,31 @@ test('Integridade DOM: todos os seletores #id usados em src/main.js existem em i
     if (!html.includes(`id="${id}"`)) missing.push(id);
   }
   assert.deepEqual(missing, [], `IDs ausentes em index.html: ${missing.join(', ')}`);
+
+  // Verifica que #stab-audio, #stab-graphics, #utab-social e #utab-ranking usam classe .hide sem inline display:none bloqueante
+  for (const paneId of ['stab-audio', 'stab-graphics', 'utab-social', 'utab-ranking']) {
+    const regex = new RegExp(`id="${paneId}"[^>]*style="display:none"`);
+    assert.equal(regex.test(html), false, `Painel #${paneId} não deve ter inline display:none bloqueando a troca de abas`);
+  }
+});
+
+test('Calibração PBR Acetinada: clearcoat reduzido, roughness acetinada e exposição editorial sem efeito vaselina', async () => {
+  const { newPieceMaterial } = await import('../src/engine/pieces3d.js');
+  const { PIECE_THEMES } = await import('../src/engine/themes.js');
+  const { LIGHTING_MODES } = await import('../src/engine/scene.js');
+
+  const matW = newPieceMaterial(PIECE_THEMES[0].w, PIECE_THEMES[0], 'high', 'staunton', 'w');
+  const matB = newPieceMaterial(PIECE_THEMES[0].b, PIECE_THEMES[0], 'high', 'staunton', 'b');
+
+  assert.ok(matW.roughness >= 0.42, 'Peças brancas devem ter rugosidade acetinada >= 0.42');
+  assert.ok(matB.roughness >= 0.42, 'Peças pretas devem ter rugosidade acetinada >= 0.42');
+  assert.ok(matW.clearcoat <= 0.15, 'Clearcoat das brancas deve ser sutil (<= 0.15)');
+  assert.ok(matB.clearcoat <= 0.10, 'Clearcoat das pretas deve ser mínimo (<= 0.10) para evitar aspecto de vaselina');
+  assert.ok(matB.envMapIntensity <= 0.30, 'envMapIntensity deve ser controlado (<= 0.30)');
+  assert.ok(LIGHTING_MODES.lit.exposure <= 0.96, 'Exposição padrão de estúdio deve ser <= 0.96');
+
+  matW.dispose();
+  matB.dispose();
 });
 
 

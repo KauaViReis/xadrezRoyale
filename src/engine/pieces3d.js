@@ -811,8 +811,9 @@ export function newPieceMaterial(colorHex, theme, tier = 'high', style = 'staunt
     return new THREE.MeshStandardMaterial({
       color: colorHex,
       vertexColors: true,
-      roughness: 0.22,
-      metalness: 0.90,
+      roughness: 0.30,
+      metalness: 0.84,
+      envMapIntensity: 0.45,
       ...texMaps,
       bumpScale: tex ? 0.0065 : 0
     });
@@ -822,8 +823,9 @@ export function newPieceMaterial(colorHex, theme, tier = 'high', style = 'staunt
     return new THREE.MeshStandardMaterial({
       color: colorHex,
       vertexColors: true,
-      roughness: 0.48,
-      metalness: 0.04,
+      roughness: 0.56,
+      metalness: 0.03,
+      envMapIntensity: 0.22,
       ...texMaps,
       bumpScale: tex ? 0.0035 : 0
     });
@@ -832,10 +834,11 @@ export function newPieceMaterial(colorHex, theme, tier = 'high', style = 'staunt
   return new THREE.MeshPhysicalMaterial({
     color: colorHex,
     vertexColors: true,
-    roughness: texKind === 'ivory' ? 0.22 : 0.28,
-    metalness: 0.06,
-    clearcoat: t === 'high' ? 0.78 : 0.48,
-    clearcoatRoughness: texKind === 'ivory' ? 0.14 : 0.18,
+    roughness: texKind === 'ivory' ? 0.44 : 0.48,
+    metalness: 0.04,
+    clearcoat: t === 'high' ? (color === 'b' ? 0.08 : 0.14) : 0.06,
+    clearcoatRoughness: 0.42,
+    envMapIntensity: 0.28,
     ...texMaps,
     bumpScale: tex ? (texKind === 'ivory' ? 0.0045 : 0.0085) : 0
   });
